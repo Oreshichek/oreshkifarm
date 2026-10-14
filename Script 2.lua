@@ -1607,34 +1607,66 @@ end
 Gui.QueueSave = QueueSave
 Gui.SaveConfigNow = SaveConfig
 
+-- ============ ИСПРАВЛЕНИЕ БЕСКОНЕЧНОГО ЦИКЛА ЛОББИ ============
 if State.PendingLobbyReturn then
+    -- Проверяем, не в лобби ли мы уже
+    local isInLobby = false
+    
+    -- Способ 1: по PlaceId
     if game.PlaceId == LobbyPlaceId then
-        -- Мы уже в лобби, сбрасываем флаг
+        isInLobby = true
+    end
+    
+    -- Способ 2: по наличию GameEnded GUI. Если GameEnded нет — мы не в матче, значит в лобби
+    if not isInLobby then
+        local gameEnded = GetGameEndedGui()
+        if not gameEnded then
+            isInLobby = true
+        end
+    end
+    
+    -- Способ 3: по отсутствию TowerDataFolder. Если TowerDataFolder нет — мы не в матче
+    if not isInLobby then
+        if not TowerDataFolder then
+            isInLobby = true
+        end
+    end
+    
+    if isInLobby then
+        -- Мы в лобби. Сбрасываем флаг, чтобы не было цикла.
         State.PendingLobbyReturn = false
         State.MatchesCompleted = 0
         State.LastCountedJobId = ""
         SaveConfig()
+        Notify("Lobby return", "Уже в лобби. Флаг сброшен.")
     else
-        -- Мы в матче, но флаг остался с прошлого раза. Проверяем, есть ли кнопка возврата
+        -- Мы в матче. Пытаемся вернуться в лобби.
         task.delay(3, function()
             if State.Running and State.PendingLobbyReturn then
-                -- Если матч уже закончился, пробуем нажать Return to Lobby
                 if IsGameEnded() then
                     local triggered, buttonMessage = TriggerBackLobbyButton()
                     if not triggered then
-                        pcall(function() TeleportService:Teleport(LobbyPlaceId, LocalPlayer) end)
+                        local ok, teleportMessage = pcall(function()
+                            TeleportService:Teleport(LobbyPlaceId, LocalPlayer)
+                        end)
+                        if not ok then
+                            Notify("Lobby return failed", tostring(buttonMessage) .. " | " .. tostring(teleportMessage))
+                        end
                     end
                 else
-                    -- Мы не в конце матча, значит флаг устарел. Сбрасываем.
+                    -- Матч ещё идёт, но флаг стоит. Значит, это устаревший флаг.
+                    -- Сбрасываем, чтобы не было цикла.
                     State.PendingLobbyReturn = false
                     State.MatchesCompleted = 0
                     State.LastCountedJobId = ""
                     SaveConfig()
+                    Notify("Lobby flag reset", "Флаг возврата сброшен, матч ещё идёт.")
                 end
             end
         end)
     end
 end
+-- ============ КОНЕЦ ИСПРАВЛЕНИЯ ============
 
 local LobbyTab = Window:Tab({ Title = "Lobby", Icon = "house" })
 local MacrosTab = Window:Tab({ Title = "Macros", Icon = "clapperboard" })
