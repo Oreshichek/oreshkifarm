@@ -514,7 +514,130 @@ local function SetStatus(title, detail)
         Gui.Status:SetDesc(detail or "")
     end
 end
+-- ============ ВЕБХУК DISCORD ============
+local function IsDiscordWebhookURL(value)
+    local url = tostring(value or "")
+    return url:match("^https://discord%.com/api/webhooks/") ~= nil
+        or url:match("^https://discordapp%.com/api/webhooks/") ~= nil
+end
 
+local function GetRequestFunction()
+    return http_request or request or (syn and syn.request) or (fluxus and fluxus.request) or (krnl and krnl.request)
+end
+
+local function SendWebhook(title, description, color)
+    if not State.WebhookEnabled then return false, "Webhook disabled" end
+    if not IsDiscordWebhookURL(State.WebhookURL) then
+        warn("[Webhook] Неверный URL. Должен начинаться с https://discord.com/api/webhooks/")
+        return false, "Invalid URL"
+    end
+    local requestFunction = GetRequestFunction()
+    if type(requestFunction) ~= "function" then
+        warn("[Webhook] Инжектор не поддерживает HTTP-запросы")
+        return false, "No HTTP support"
+    end
+    local payload = {
+        username = "Skibidi Defense Hub",
+        embeds = {{
+            title = tostring(title or "Skibidi Defense Hub"),
+            description = tostring(description or ""),
+            color = tonumber(color) or 5793266,
+            footer = { text = "Made By Gothbreach | " .. tostring(LocalPlayer.Name) },
+            timestamp = DateTime.now():ToIsoDate(),
+        }},
+    }
+    local ok, encoded = pcall(function() return HttpService:JSONEncode(payload) end)
+    if not ok then return false, tostring(encoded) end
+    local ok2, response = pcall(function()
+        return requestFunction({
+            Url = State.WebhookURL,
+            Method = "POST",
+            Headers = { ["Content-Type"] = "application/json" },
+            Body = encoded,
+        })
+    end)
+    if not ok2 then
+        warn("[Webhook] Ошибка отправки: " .. tostring(response))
+        return false, tostring(response)
+    end
+    return true
+end
+
+local function GetMatchResultText()
+    local gameEnded = GetGameEndedGui()
+    if not gameEnded then return "Match Ended" end
+    for _, descendant in ipairs(gameEnded:GetDescendants()) do
+        if descendant:IsA("TextLabel") or descendant:IsA("TextButton") then
+            local lowered = string.lower(tostring(descendant.Text or ""))
+            if lowered:find("you have defeated", 1, true)
+                or lowered:find("victory", 1, true)
+                or lowered:find("you won", 1, true) then
+                return "Victory"
+            end
+        end
+    end
+    for _, descendant in ipairs(gameEnded:GetDescendants()) do
+        if descendant:IsA("TextLabel") or descendant:IsA("TextButton") then
+            local lowered = string.lower(tostring(descendant.Text or ""))
+            if lowered:find("defeat", 1, true)
+                or lowered:find("you lost", 1, true)
+                or lowered:find("game over", 1, true) then
+                return "Defeat"
+            end
+        end
+    end
+    return "Match Ended"
+end
+
+local function SendMatchEndWebhook()
+    if not State.WebhookEnabled or not State.WebhookMatchEnd then return end
+    if not IsDiscordWebhookURL(State.WebhookURL) then return end
+    local requestFunction = GetRequestFunction()
+    if type(requestFunction) ~= "function" then return end
+
+    local resultText = GetMatchResultText()
+    local embedColor = (resultText == "Victory" or resultText:find("Victory")) and 65280 or 16711680
+
+    local payload = {
+        username = "Skibidi Defense Hub",
+        embeds = {{
+            title = "Skibidi Defense Match Report",
+            description = string.format("**Stage:** %s\n**Result:** %s",
+                tostring(State.LobbyChapter) .. " (" .. tostring(State.LobbyMode) .. ")", resultText),
+            color = embedColor,
+            fields = {
+                {
+                    name = "Player Info",
+                    value = string.format("Name: %s\nMoney: %s\nBase HP: %s",
+                        LocalPlayer.Name, tostring(GetMoney()), tostring(GetBaseHealthText())),
+                    inline = false,
+                },
+                {
+                    name = "Match Details",
+                    value = string.format("Wave: %s\nMacro: %s\nMatch cycle: %d/%d",
+                        tostring(GetWave()), (State.ProfileName ~= "" and State.ProfileName or "None"),
+                        State.MatchesCompleted, State.MatchesBeforeLobby),
+                    inline = false,
+                },
+            },
+            footer = { text = "Made By Gothbreach" },
+            timestamp = DateTime.now():ToIsoDate(),
+        }},
+    }
+
+    pcall(function()
+        requestFunction({
+            Url = State.WebhookURL,
+            Method = "POST",
+            Headers = { ["Content-Type"] = "application/json" },
+            Body = HttpService:JSONEncode(payload),
+        })
+    end)
+end
+
+Gui.SendWebhook = SendWebhook
+Gui.SendMatchEndWebhook = SendMatchEndWebhook
+-- ============ КОНЕЦ ВЕБХУКА ============
 local function RefreshActionList()
     if not Gui.ActionSummary then return end
     local lines = {}
@@ -1304,15 +1427,36 @@ task.spawn(function()
             speedReadySince = nil
         end
         if ended and not replayLatched then
-            replayLatched = true
-            if State.AutoBackLobby and State.LastCountedJobId ~= game.JobId then
-                State.LastCountedJobId = game.JobId
-                State.MatchesCompleted = State.MatchesCompleted + 1
-                if State.MatchesCompleted >= State.MatchesBeforeLobby then
-                    State.PendingLobbyReturn = true
-                    SetStatus("Match cycle complete", "Waiting 25s before lobby")
-                    task.wait(25)
-                else
+    replayLatched = true
+
+    local shouldCount = false
+    if State.AutoReplay then
+        shouldCount = true
+    else
+        if State.LastCountedJobId ~= game.JobId then
+            shouldCount = true
+        end
+    end
+
+    if State.AutoBackLobby and shouldCount then
+        State.LastCountedJobId = game.JobId
+        State.MatchesCompleted = State.MatchesCompleted + 1
+        if State.MatchesCompleted >= State.MatchesBeforeLobby then
+            State.PendingLobbyReturn = true
+            SetStatus("Match cycle complete", "Waiting 5s before lobby")
+            local lobbyWaitUntil = os.clock() + 5
+            task.spawn(function()
+                while os.clock() < lobbyWaitUntil and State.Running do
+                    task.wait(0.5)
+                end
+                if State.Running and State.PendingLobbyReturn then
+                    local triggered, message = TriggerBackLobbyButton()
+                    if not triggered then
+                        SetStatus("Lobby button waiting", tostring(message) .. " | retrying")
+                    end
+                end
+            end)
+        else
                     SetStatus("Match counted", string.format("%d/%d matches before lobby",
                         State.MatchesCompleted, State.MatchesBeforeLobby))
                 end
@@ -1320,6 +1464,7 @@ task.spawn(function()
                 if Gui.SaveConfigNow then Gui.SaveConfigNow()
                 elseif Gui.QueueSave then Gui.QueueSave() end
             end
+            SendMatchEndWebhook()
              local lobbyReturnTriggered = false
             if State.PendingLobbyReturn then
                 local message
@@ -1464,19 +1609,27 @@ Gui.SaveConfigNow = SaveConfig
 
 if State.PendingLobbyReturn then
     if game.PlaceId == LobbyPlaceId then
+        -- Мы уже в лобби, сбрасываем флаг
         State.PendingLobbyReturn = false
         State.MatchesCompleted = 0
         State.LastCountedJobId = ""
         SaveConfig()
     else
-        task.delay(1, function()
+        -- Мы в матче, но флаг остался с прошлого раза. Проверяем, есть ли кнопка возврата
+        task.delay(3, function()
             if State.Running and State.PendingLobbyReturn then
-                local triggered, buttonMessage = TriggerBackLobbyButton()
-                if not triggered then
-                    local ok, teleportMessage = pcall(function() TeleportService:Teleport(LobbyPlaceId, LocalPlayer) end)
-                    if not ok then
-                        Notify("Lobby return failed", tostring(buttonMessage) .. " | " .. tostring(teleportMessage))
+                -- Если матч уже закончился, пробуем нажать Return to Lobby
+                if IsGameEnded() then
+                    local triggered, buttonMessage = TriggerBackLobbyButton()
+                    if not triggered then
+                        pcall(function() TeleportService:Teleport(LobbyPlaceId, LocalPlayer) end)
                     end
+                else
+                    -- Мы не в конце матча, значит флаг устарел. Сбрасываем.
+                    State.PendingLobbyReturn = false
+                    State.MatchesCompleted = 0
+                    State.LastCountedJobId = ""
+                    SaveConfig()
                 end
             end
         end)
