@@ -122,6 +122,46 @@ local function GetGameEndedGui()
     local gui = GetPlayerGui()
     return gui and gui:FindFirstChild("GameEnded")
 end
+-- ============ ДЕТЕКТ КИКА ============
+local kickDetected = false
+
+local function DetectKickAndReact()
+    if kickDetected then return end
+    local gui = GetPlayerGui()
+    if not gui then return end
+    for _, obj in ipairs(gui:GetDescendants()) do
+        if obj:IsA("TextLabel") or obj:IsA("TextButton") then
+            local text = string.lower(tostring(obj.Text or ""))
+            if text:find("macro", 1, true)
+                or text:find("kicked", 1, true)
+                or text:find("suspected", 1, true)
+                or text:find("disconnected", 1, true)
+                or text:find("moderation", 1, true) then
+                kickDetected = true
+                warn("[KickDetect] Обнаружен текст о кике: " .. tostring(obj.Text))
+                if Remotes.Replay then
+                    pcall(function() Remotes.Replay:FireServer() end)
+                    warn("[KickDetect] ReplayCore вызван")
+                end
+                pcall(function()
+                    TeleportService:Teleport(LobbyPlaceId, LocalPlayer)
+                end)
+                warn("[KickDetect] Попытка телепорта в лобби")
+                return
+            end
+        end
+    end
+end
+
+task.spawn(function()
+    while State.Running do
+        if not kickDetected then
+            pcall(DetectKickAndReact)
+        end
+        task.wait(0.1)
+    end
+end)
+-- ============ КОНЕЦ ДЕТЕКТА КИКА ============
 local function IsGameEnded()
     local gameEnded = GetGameEndedGui()
     return gameEnded and gameEnded.Enabled == true or false
@@ -130,23 +170,61 @@ end
 local function TriggerBackLobbyButton()
     local gameEnded = GetGameEndedGui()
     if not gameEnded then return false, "GameEnded not found" end
-    local frame = gameEnded:FindFirstChild("Frame")
-    local backButton = frame and frame:FindFirstChild("back")
-    if not backButton or not backButton:IsA("GuiButton") then
-        return false, "GameEnded.Frame.back not found"
+
+    -- Ищем кнопку по тексту, а не по имени
+    local backButton = nil
+    for _, descendant in ipairs(gameEnded:GetDescendants()) do
+        if descendant:IsA("GuiButton") or descendant:IsA("TextButton") then
+            local text = string.upper(tostring(descendant.Text or ""))
+            if text:find("RETURN TO LOBBY", 1, true)
+                or text:find("RETURN", 1, true)
+                or text:find("BACK TO LOBBY", 1, true)
+                or text:find("LOBBY", 1, true) then
+                backButton = descendant
+                break
+            end
+        end
     end
-    -- Способ 1: firesignal
+
+    if not backButton then
+        return false, "Return to Lobby button not found"
+    end
+
+    -- Способ 1: getconnections
+    if type(getconnections) == "function" then
+        local ok, connections = pcall(getconnections, backButton.MouseButton1Click)
+        if ok and type(connections) == "table" then
+            for _, connection in ipairs(connections) do
+                local fired = pcall(function()
+                    if type(connection.Fire) == "function" then
+                        connection:Fire()
+                    elseif type(connection.Function) == "function" then
+                        connection.Function()
+                    else
+                        error("Connection cannot be invoked")
+                    end
+                end)
+                if fired then return true end
+            end
+        end
+    end
+
+    -- Способ 2: firesignal
     if type(firesignal) == "function" then
-        local ok = pcall(firesignal, backButton.MouseButton1Click)
+        local ok, message = pcall(firesignal, backButton.MouseButton1Click)
         if ok then return true end
+        return false, tostring(message)
     end
-    -- Способ 2: Fire()
+
+    -- Способ 3: Fire()
     local ok2 = pcall(function() backButton.MouseButton1Click:Fire() end)
     if ok2 then return true end
-    -- Способ 3: через VirtualInputManager (нажатие реальной мыши)
-        local VIM = game:GetService("VirtualInputManager")
-    if VIM then
-        local screenPoint, onScreen = Workspace.CurrentCamera:WorldToViewportPoint(backButton.AbsolutePosition + backButton.AbsoluteSize / 2)
+
+    -- Способ 4: VirtualInputManager
+    local VIM = game:GetService("VirtualInputManager")
+    if VIM and Workspace.CurrentCamera then
+        local screenPoint, onScreen = Workspace.CurrentCamera:WorldToViewportPoint(
+            backButton.AbsolutePosition + backButton.AbsoluteSize / 2)
         if onScreen then
             VIM:SendMouseButtonEvent(screenPoint.X, screenPoint.Y, 0, true, game, 1)
             task.wait(0.1)
@@ -154,7 +232,8 @@ local function TriggerBackLobbyButton()
             return true
         end
     end
-    return false, "Cannot invoke back button"
+
+    return false, "Cannot invoke Return to Lobby button"
 end
 
 local function GetMoney()
@@ -1225,82 +1304,64 @@ task.spawn(function()
             speedReadySince = nil
         end
         if ended and not replayLatched then
-    replayLatched = true
-
-    local shouldCount = false
-    if State.AutoReplay then
-        shouldCount = true
-    else
-        if State.LastCountedJobId ~= game.JobId then
-            shouldCount = true
-        end
-    end
-
-    if State.AutoBackLobby and shouldCount then
-        State.LastCountedJobId = game.JobId
-        State.MatchesCompleted = State.MatchesCompleted + 1
-        if State.MatchesCompleted >= State.MatchesBeforeLobby then
-            State.PendingLobbyReturn = true
-            SetStatus("Match cycle complete", "Waiting 25s before lobby")
-            local lobbyWaitUntil = os.clock() + 25
-            task.spawn(function()
-                while os.clock() < lobbyWaitUntil and State.Running do
-                    task.wait(0.5)
+            replayLatched = true
+            if State.AutoBackLobby and State.LastCountedJobId ~= game.JobId then
+                State.LastCountedJobId = game.JobId
+                State.MatchesCompleted = State.MatchesCompleted + 1
+                if State.MatchesCompleted >= State.MatchesBeforeLobby then
+                    State.PendingLobbyReturn = true
+                    SetStatus("Match cycle complete", "Waiting 25s before lobby")
+                    task.wait(25)
+                else
+                    SetStatus("Match counted", string.format("%d/%d matches before lobby",
+                        State.MatchesCompleted, State.MatchesBeforeLobby))
                 end
-                if State.Running and State.PendingLobbyReturn then
-                    local triggered, message = TriggerBackLobbyButton()
-                    if not triggered then
-                        SetStatus("Lobby button waiting", tostring(message) .. " | retrying")
-                    end
+                if Gui.UpdateMatchCounter then Gui.UpdateMatchCounter() end
+                if Gui.SaveConfigNow then Gui.SaveConfigNow()
+                elseif Gui.QueueSave then Gui.QueueSave() end
+            end
+             local lobbyReturnTriggered = false
+            if State.PendingLobbyReturn then
+                local message
+                lobbyReturnTriggered, message = TriggerBackLobbyButton()
+                if not lobbyReturnTriggered then
+                    SetStatus("Lobby button waiting", tostring(message) .. " | retrying")
+                    task.spawn(function()
+                        local retryMessage = message
+                        for _ = 1, 40 do
+                            if not State.Running or not State.PendingLobbyReturn then return end
+                            task.wait(1)
+                            local triggered
+                            triggered, retryMessage = TriggerBackLobbyButton()
+                            if triggered then
+                                SetStatus("Returning to lobby", "Game back button triggered")
+                                return
+                            end
+                        end
+                        SetStatus("Lobby button failed", "Teleporting via service")
+                        pcall(function()
+                            TeleportService:Teleport(LobbyPlaceId, LocalPlayer)
+                        end)
+                    end)
                 end
-            end)
-        else
-            SetStatus("Match counted", string.format("%d/%d matches before lobby",
-                State.MatchesCompleted, State.MatchesBeforeLobby))
+            end
+            local shouldReplay = State.AutoReplay and not State.PendingLobbyReturn
+            if shouldReplay and Remotes.Replay then
+                restartAfterReplay = not State.PendingLobbyReturn and State.PlaybackEnabled and #State.Actions > 0
+                pcall(function() Remotes.Replay:FireServer() end)
+            end
+          elseif not ended then
+            replayLatched = false
+            if restartAfterReplay and not State.Playing and not State.PendingLobbyReturn then
+                restartAfterReplay = false
+                local started, message = StartPlayback()
+                if started and Gui.SetPlaybackToggle then Gui.SetPlaybackToggle(true)
+                elseif not started then SetStatus("Replay started", message or "Could not restart profile") end
+            end
         end
-        if Gui.UpdateMatchCounter then Gui.UpdateMatchCounter() end
-        if Gui.SaveConfigNow then Gui.SaveConfigNow()
-        elseif Gui.QueueSave then Gui.QueueSave() end
+        task.wait(0.1)
     end
-
-    if State.PendingLobbyReturn then
-        local triggered, message = TriggerBackLobbyButton()
-        if not triggered then
-            SetStatus("Lobby button waiting", tostring(message) .. " | retrying")
-            task.spawn(function()
-                local retryMessage = message
-                for _ = 1, 40 do
-                    if not State.Running or not State.PendingLobbyReturn then return end
-                    task.wait(1)
-                    local t
-                    t, retryMessage = TriggerBackLobbyButton()
-                    if t then
-                        SetStatus("Returning to lobby", "Game back button triggered")
-                        return
-                    end
-                end
-                SetStatus("Lobby button failed", "Teleporting via service")
-                pcall(function()
-                    TeleportService:Teleport(LobbyPlaceId, LocalPlayer)
-                end)
-            end)
-        end
-    end
-
-    local shouldReplay = State.AutoReplay and not State.PendingLobbyReturn
-    if shouldReplay and Remotes.Replay then
-        restartAfterReplay = not State.PendingLobbyReturn and State.PlaybackEnabled and #State.Actions > 0
-        pcall(function() Remotes.Replay:FireServer() end)
-    end
-elseif not ended then
-    replayLatched = false
-    if restartAfterReplay and not State.Playing and not State.PendingLobbyReturn then
-        restartAfterReplay = false
-        local started, message = StartPlayback()
-        if started and Gui.SetPlaybackToggle then Gui.SetPlaybackToggle(true)
-        elseif not started then SetStatus("Replay started", message or "Could not restart profile") end
-    end
-end
+end)
 
 -- ============================================================
 -- WindUI
