@@ -1225,64 +1225,82 @@ task.spawn(function()
             speedReadySince = nil
         end
         if ended and not replayLatched then
-            replayLatched = true
-            if State.AutoBackLobby and State.LastCountedJobId ~= game.JobId then
-                State.LastCountedJobId = game.JobId
-                State.MatchesCompleted = State.MatchesCompleted + 1
-                if State.MatchesCompleted >= State.MatchesBeforeLobby then
-                    State.PendingLobbyReturn = true
-                    SetStatus("Match cycle complete", "Waiting 25s before lobby")
-                    task.wait(25)
-                else
-                    SetStatus("Match counted", string.format("%d/%d matches before lobby",
-                        State.MatchesCompleted, State.MatchesBeforeLobby))
-                end
-                if Gui.UpdateMatchCounter then Gui.UpdateMatchCounter() end
-                if Gui.SaveConfigNow then Gui.SaveConfigNow()
-                elseif Gui.QueueSave then Gui.QueueSave() end
-            end
-             local lobbyReturnTriggered = false
-            if State.PendingLobbyReturn then
-                local message
-                lobbyReturnTriggered, message = TriggerBackLobbyButton()
-                if not lobbyReturnTriggered then
-                    SetStatus("Lobby button waiting", tostring(message) .. " | retrying")
-                    task.spawn(function()
-                        local retryMessage = message
-                        for _ = 1, 40 do
-                            if not State.Running or not State.PendingLobbyReturn then return end
-                            task.wait(1)
-                            local triggered
-                            triggered, retryMessage = TriggerBackLobbyButton()
-                            if triggered then
-                                SetStatus("Returning to lobby", "Game back button triggered")
-                                return
-                            end
-                        end
-                        SetStatus("Lobby button failed", "Teleporting via service")
-                        pcall(function()
-                            TeleportService:Teleport(LobbyPlaceId, LocalPlayer)
-                        end)
-                    end)
-                end
-            end
-            local shouldReplay = State.AutoReplay and not State.PendingLobbyReturn
-            if shouldReplay and Remotes.Replay then
-                restartAfterReplay = not State.PendingLobbyReturn and State.PlaybackEnabled and #State.Actions > 0
-                pcall(function() Remotes.Replay:FireServer() end)
-            end
-          elseif not ended then
-            replayLatched = false
-            if restartAfterReplay and not State.Playing and not State.PendingLobbyReturn then
-                restartAfterReplay = false
-                local started, message = StartPlayback()
-                if started and Gui.SetPlaybackToggle then Gui.SetPlaybackToggle(true)
-                elseif not started then SetStatus("Replay started", message or "Could not restart profile") end
-            end
+    replayLatched = true
+
+    local shouldCount = false
+    if State.AutoReplay then
+        shouldCount = true
+    else
+        if State.LastCountedJobId ~= game.JobId then
+            shouldCount = true
         end
-        task.wait(0.1)
     end
-end)
+
+    if State.AutoBackLobby and shouldCount then
+        State.LastCountedJobId = game.JobId
+        State.MatchesCompleted = State.MatchesCompleted + 1
+        if State.MatchesCompleted >= State.MatchesBeforeLobby then
+            State.PendingLobbyReturn = true
+            SetStatus("Match cycle complete", "Waiting 25s before lobby")
+            local lobbyWaitUntil = os.clock() + 25
+            task.spawn(function()
+                while os.clock() < lobbyWaitUntil and State.Running do
+                    task.wait(0.5)
+                end
+                if State.Running and State.PendingLobbyReturn then
+                    local triggered, message = TriggerBackLobbyButton()
+                    if not triggered then
+                        SetStatus("Lobby button waiting", tostring(message) .. " | retrying")
+                    end
+                end
+            end)
+        else
+            SetStatus("Match counted", string.format("%d/%d matches before lobby",
+                State.MatchesCompleted, State.MatchesBeforeLobby))
+        end
+        if Gui.UpdateMatchCounter then Gui.UpdateMatchCounter() end
+        if Gui.SaveConfigNow then Gui.SaveConfigNow()
+        elseif Gui.QueueSave then Gui.QueueSave() end
+    end
+
+    if State.PendingLobbyReturn then
+        local triggered, message = TriggerBackLobbyButton()
+        if not triggered then
+            SetStatus("Lobby button waiting", tostring(message) .. " | retrying")
+            task.spawn(function()
+                local retryMessage = message
+                for _ = 1, 40 do
+                    if not State.Running or not State.PendingLobbyReturn then return end
+                    task.wait(1)
+                    local t
+                    t, retryMessage = TriggerBackLobbyButton()
+                    if t then
+                        SetStatus("Returning to lobby", "Game back button triggered")
+                        return
+                    end
+                end
+                SetStatus("Lobby button failed", "Teleporting via service")
+                pcall(function()
+                    TeleportService:Teleport(LobbyPlaceId, LocalPlayer)
+                end)
+            end)
+        end
+    end
+
+    local shouldReplay = State.AutoReplay and not State.PendingLobbyReturn
+    if shouldReplay and Remotes.Replay then
+        restartAfterReplay = not State.PendingLobbyReturn and State.PlaybackEnabled and #State.Actions > 0
+        pcall(function() Remotes.Replay:FireServer() end)
+    end
+elseif not ended then
+    replayLatched = false
+    if restartAfterReplay and not State.Playing and not State.PendingLobbyReturn then
+        restartAfterReplay = false
+        local started, message = StartPlayback()
+        if started and Gui.SetPlaybackToggle then Gui.SetPlaybackToggle(true)
+        elseif not started then SetStatus("Replay started", message or "Could not restart profile") end
+    end
+end
 
 -- ============================================================
 -- WindUI
