@@ -1275,7 +1275,7 @@ task.spawn(function()
             replayLatched = false
             if restartAfterReplay and not State.Playing and not State.PendingLobbyReturn then
                 restartAfterReplay = false
-                local started, message = StartPlayback())
+                local started, message = StartPlayback()
                 if started and Gui.SetPlaybackToggle then Gui.SetPlaybackToggle(true)
                 elseif not started then SetStatus("Replay started", message or "Could not restart profile") end
             end
