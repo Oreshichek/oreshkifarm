@@ -22,7 +22,7 @@ local State = {
     AutoReady = false, AutoSkip = false, AutoReplay = false, AutoSpeed = false,
     SpeedScaleDelay = 1, MovingAround = false, AutoJoinMap = false,
     LobbyMode = "Story", LobbyChapter = "Chapter 1", LobbyModifiers = {},
-    AutoBackLobby = false, MatchesBeforeLobby = 3, MatchesCompleted = 0,
+    AutoBackLobby = false, MatchesBeforeLobby = 5, MatchesCompleted = 0,
     LastCountedJobId = "", PendingLobbyReturn = false, JoinRequested = false,
     WebhookEnabled = false, WebhookURL = "", WebhookMatchEnd = true,
     Speed = 1, PlaybackMode = "Hybrid", ProfileName = "", ProfileVersion = 4,
@@ -33,7 +33,6 @@ local State = {
     PendingAbilityClickAt = -math.huge, PendingAbilityIndex = 1,
     PlayerRecording = false, PlayerRecordingStartedAt = 0,
     PlayerActions = {}, PlayerRecordingProfileName = "", PlayerRecordingConnections = {},
-    Chapter9Mode = false, Chapter9SpeedSet = false,
 }
 
 local MacroFolder = "SkibidiDefense_Macros"
@@ -122,46 +121,6 @@ local function GetGameEndedGui()
     local gui = GetPlayerGui()
     return gui and gui:FindFirstChild("GameEnded")
 end
--- ============ ДЕТЕКТ КИКА ============
-local kickDetected = false
-
-local function DetectKickAndReact()
-    if kickDetected then return end
-    local gui = GetPlayerGui()
-    if not gui then return end
-    for _, obj in ipairs(gui:GetDescendants()) do
-        if obj:IsA("TextLabel") or obj:IsA("TextButton") then
-            local text = string.lower(tostring(obj.Text or ""))
-            if text:find("macro", 1, true)
-                or text:find("kicked", 1, true)
-                or text:find("suspected", 1, true)
-                or text:find("disconnected", 1, true)
-                or text:find("moderation", 1, true) then
-                kickDetected = true
-                warn("[KickDetect] Обнаружен текст о кике: " .. tostring(obj.Text))
-                if Remotes.Replay then
-                    pcall(function() Remotes.Replay:FireServer() end)
-                    warn("[KickDetect] ReplayCore вызван")
-                end
-                pcall(function()
-                    TeleportService:Teleport(LobbyPlaceId, LocalPlayer)
-                end)
-                warn("[KickDetect] Попытка телепорта в лобби")
-                return
-            end
-        end
-    end
-end
-
-task.spawn(function()
-    while State.Running do
-        if not kickDetected then
-            pcall(DetectKickAndReact)
-        end
-        task.wait(0.1)
-    end
-end)
--- ============ КОНЕЦ ДЕТЕКТА КИКА ============
 local function IsGameEnded()
     local gameEnded = GetGameEndedGui()
     return gameEnded and gameEnded.Enabled == true or false
@@ -169,71 +128,28 @@ end
 
 local function TriggerBackLobbyButton()
     local gameEnded = GetGameEndedGui()
-    if not gameEnded then return false, "GameEnded not found" end
-
-    -- Ищем кнопку по тексту, а не по имени
-    local backButton = nil
-    for _, descendant in ipairs(gameEnded:GetDescendants()) do
-        if descendant:IsA("GuiButton") or descendant:IsA("TextButton") then
-            local text = string.upper(tostring(descendant.Text or ""))
-            if text:find("RETURN TO LOBBY", 1, true)
-                or text:find("RETURN", 1, true)
-                or text:find("BACK TO LOBBY", 1, true)
-                or text:find("LOBBY", 1, true) then
-                backButton = descendant
-                break
-            end
-        end
+    local frame = gameEnded and gameEnded:FindFirstChild("Frame")
+    local backButton = frame and frame:FindFirstChild("back")
+    if not backButton or not backButton:IsA("GuiButton") then
+        return false, "GameEnded.Frame.back was not found"
     end
-
-    if not backButton then
-        return false, "Return to Lobby button not found"
+    if type(firesignal) == "function" then
+        local ok = pcall(firesignal, backButton.MouseButton1Click)
+        if ok then return true end
     end
-
-    -- Способ 1: getconnections
     if type(getconnections) == "function" then
         local ok, connections = pcall(getconnections, backButton.MouseButton1Click)
         if ok and type(connections) == "table" then
             for _, connection in ipairs(connections) do
-                local fired = pcall(function()
-                    if type(connection.Fire) == "function" then
-                        connection:Fire()
-                    elseif type(connection.Function) == "function" then
-                        connection.Function()
-                    else
-                        error("Connection cannot be invoked")
-                    end
+                pcall(function()
+                    if type(connection.Fire) == "function" then connection:Fire()
+                    elseif type(connection.Function) == "function" then connection.Function() end
                 end)
-                if fired then return true end
             end
-        end
-    end
-
-    -- Способ 2: firesignal
-    if type(firesignal) == "function" then
-        local ok, message = pcall(firesignal, backButton.MouseButton1Click)
-        if ok then return true end
-        return false, tostring(message)
-    end
-
-    -- Способ 3: Fire()
-    local ok2 = pcall(function() backButton.MouseButton1Click:Fire() end)
-    if ok2 then return true end
-
-    -- Способ 4: VirtualInputManager
-    local VIM = game:GetService("VirtualInputManager")
-    if VIM and Workspace.CurrentCamera then
-        local screenPoint, onScreen = Workspace.CurrentCamera:WorldToViewportPoint(
-            backButton.AbsolutePosition + backButton.AbsoluteSize / 2)
-        if onScreen then
-            VIM:SendMouseButtonEvent(screenPoint.X, screenPoint.Y, 0, true, game, 1)
-            task.wait(0.1)
-            VIM:SendMouseButtonEvent(screenPoint.X, screenPoint.Y, 0, false, game, 1)
             return true
         end
     end
-
-    return false, "Cannot invoke Return to Lobby button"
+    return false, "Executor cannot invoke MouseButton1Click"
 end
 
 local function GetMoney()
@@ -514,130 +430,7 @@ local function SetStatus(title, detail)
         Gui.Status:SetDesc(detail or "")
     end
 end
--- ============ ВЕБХУК DISCORD ============
-local function IsDiscordWebhookURL(value)
-    local url = tostring(value or "")
-    return url:match("^https://discord%.com/api/webhooks/") ~= nil
-        or url:match("^https://discordapp%.com/api/webhooks/") ~= nil
-end
 
-local function GetRequestFunction()
-    return http_request or request or (syn and syn.request) or (fluxus and fluxus.request) or (krnl and krnl.request)
-end
-
-local function SendWebhook(title, description, color)
-    if not State.WebhookEnabled then return false, "Webhook disabled" end
-    if not IsDiscordWebhookURL(State.WebhookURL) then
-        warn("[Webhook] Неверный URL. Должен начинаться с https://discord.com/api/webhooks/")
-        return false, "Invalid URL"
-    end
-    local requestFunction = GetRequestFunction()
-    if type(requestFunction) ~= "function" then
-        warn("[Webhook] Инжектор не поддерживает HTTP-запросы")
-        return false, "No HTTP support"
-    end
-    local payload = {
-        username = "Skibidi Defense Hub",
-        embeds = {{
-            title = tostring(title or "Skibidi Defense Hub"),
-            description = tostring(description or ""),
-            color = tonumber(color) or 5793266,
-            footer = { text = "Made By Gothbreach | " .. tostring(LocalPlayer.Name) },
-            timestamp = DateTime.now():ToIsoDate(),
-        }},
-    }
-    local ok, encoded = pcall(function() return HttpService:JSONEncode(payload) end)
-    if not ok then return false, tostring(encoded) end
-    local ok2, response = pcall(function()
-        return requestFunction({
-            Url = State.WebhookURL,
-            Method = "POST",
-            Headers = { ["Content-Type"] = "application/json" },
-            Body = encoded,
-        })
-    end)
-    if not ok2 then
-        warn("[Webhook] Ошибка отправки: " .. tostring(response))
-        return false, tostring(response)
-    end
-    return true
-end
-
-local function GetMatchResultText()
-    local gameEnded = GetGameEndedGui()
-    if not gameEnded then return "Match Ended" end
-    for _, descendant in ipairs(gameEnded:GetDescendants()) do
-        if descendant:IsA("TextLabel") or descendant:IsA("TextButton") then
-            local lowered = string.lower(tostring(descendant.Text or ""))
-            if lowered:find("you have defeated", 1, true)
-                or lowered:find("victory", 1, true)
-                or lowered:find("you won", 1, true) then
-                return "Victory"
-            end
-        end
-    end
-    for _, descendant in ipairs(gameEnded:GetDescendants()) do
-        if descendant:IsA("TextLabel") or descendant:IsA("TextButton") then
-            local lowered = string.lower(tostring(descendant.Text or ""))
-            if lowered:find("defeat", 1, true)
-                or lowered:find("you lost", 1, true)
-                or lowered:find("game over", 1, true) then
-                return "Defeat"
-            end
-        end
-    end
-    return "Match Ended"
-end
-
-local function SendMatchEndWebhook()
-    if not State.WebhookEnabled or not State.WebhookMatchEnd then return end
-    if not IsDiscordWebhookURL(State.WebhookURL) then return end
-    local requestFunction = GetRequestFunction()
-    if type(requestFunction) ~= "function" then return end
-
-    local resultText = GetMatchResultText()
-    local embedColor = (resultText == "Victory" or resultText:find("Victory")) and 65280 or 16711680
-
-    local payload = {
-        username = "Skibidi Defense Hub",
-        embeds = {{
-            title = "Skibidi Defense Match Report",
-            description = string.format("**Stage:** %s\n**Result:** %s",
-                tostring(State.LobbyChapter) .. " (" .. tostring(State.LobbyMode) .. ")", resultText),
-            color = embedColor,
-            fields = {
-                {
-                    name = "Player Info",
-                    value = string.format("Name: %s\nMoney: %s\nBase HP: %s",
-                        LocalPlayer.Name, tostring(GetMoney()), tostring(GetBaseHealthText())),
-                    inline = false,
-                },
-                {
-                    name = "Match Details",
-                    value = string.format("Wave: %s\nMacro: %s\nMatch cycle: %d/%d",
-                        tostring(GetWave()), (State.ProfileName ~= "" and State.ProfileName or "None"),
-                        State.MatchesCompleted, State.MatchesBeforeLobby),
-                    inline = false,
-                },
-            },
-            footer = { text = "Made By Gothbreach" },
-            timestamp = DateTime.now():ToIsoDate(),
-        }},
-    }
-
-    pcall(function()
-        requestFunction({
-            Url = State.WebhookURL,
-            Method = "POST",
-            Headers = { ["Content-Type"] = "application/json" },
-            Body = HttpService:JSONEncode(payload),
-        })
-    end)
-end
-
-Gui.SendWebhook = SendWebhook
-Gui.SendMatchEndWebhook = SendMatchEndWebhook
--- ============ КОНЕЦ ВЕБХУКА ============
 local function RefreshActionList()
     if not Gui.ActionSummary then return end
     local lines = {}
@@ -1068,71 +861,67 @@ local function PlayPlayerRecording(profileName)
 end
 
 -- UPGRADE ALL
-local CachedUpgradeBtn = nil
-local CachedUpgradeBtnTime = 0
 local function PlayUpgradeAll()
     local gui = GetPlayerGui()
     if not gui then return false, "PlayerGui not found" end
+
     local btn
-    if CachedUpgradeBtn and CachedUpgradeBtn.Parent
-        and (os.clock() - CachedUpgradeBtnTime) < 5 then
-        btn = CachedUpgradeBtn
-    else
-        local rightButtons = gui:FindFirstChild("RightButtons")
-        if rightButtons then
-            for _, child in ipairs(rightButtons:GetChildren()) do
-                if child:IsA("GuiButton") then
-                    local name = tostring(child.Name):lower()
-                    local text = child:IsA("TextButton") and tostring(child.Text):lower() or ""
-                    if name:find("upgrade") or text:find("upgrade") then
-                        btn = child
-                        break
-                    end
+    local rightButtons = gui:FindFirstChild("RightButtons")
+    if rightButtons then
+        for _, child in ipairs(rightButtons:GetChildren()) do
+            if child:IsA("GuiButton") then
+                local name = tostring(child.Name):lower()
+                local text = child:IsA("TextButton") and tostring(child.Text):lower() or ""
+                if name:find("upgrade") or text:find("upgrade") then
+                    btn = child
+                    break
                 end
             end
-        end
-        if not btn then
-            for _, obj in ipairs(gui:GetDescendants()) do
-                if obj:IsA("GuiButton") then
-                    local text = obj:IsA("TextButton") and tostring(obj.Text or ""):lower() or ""
-                    if text:find("upgrade all", 1, true) or text:find("upgrade", 1, true) then
-                        btn = obj
-                        break
-                    end
-                end
-            end
-        end
-        if btn then
-            CachedUpgradeBtn = btn
-            CachedUpgradeBtnTime = os.clock()
         end
     end
+
     if not btn then
-        if TowerDataFolder and Remotes.Upgrade then
-            for _, tower in ipairs(TowerDataFolder:GetChildren()) do
-                if tower:GetAttribute("Creator") == LocalPlayer.Name then
-                    pcall(function() Remotes.Upgrade:FireServer(tostring(tower.Name)) end)
+        for _, obj in ipairs(gui:GetDescendants()) do
+            if obj:IsA("GuiButton") then
+                local text = obj:IsA("TextButton") and tostring(obj.Text or ""):lower() or ""
+                if text:find("upgrade all", 1, true) or text:find("upgrade", 1, true) then
+                    btn = obj
+                    break
                 end
             end
-            return true
         end
-        return false, "Upgrade All button not found"
     end
+
+    if not btn then return false, "Upgrade All button not found" end
+
+    local fired = false
     if type(firesignal) == "function" then
         local ok = pcall(firesignal, btn.MouseButton1Click)
-        if ok then return true end
+        if ok then fired = true end
     end
-    local ok2 = pcall(function() btn.MouseButton1Click:Fire() end)
-    if ok2 then return true end
-    if TowerDataFolder and Remotes.Upgrade then
+    if not fired and type(getconnections) == "function" then
+        local ok, connections = pcall(getconnections, btn.MouseButton1Click)
+        if ok and type(connections) == "table" then
+            for _, conn in ipairs(connections) do
+                pcall(function()
+                    if type(conn.Fire) == "function" then conn:Fire() fired = true
+                    elseif type(conn.Function) == "function" then conn.Function() fired = true end
+                end)
+            end
+        end
+    end
+    if not fired then
+        pcall(function() btn.MouseButton1Click:Fire() fired = true end)
+    end
+    if not fired and TowerDataFolder and Remotes.Upgrade then
         for _, tower in ipairs(TowerDataFolder:GetChildren()) do
             if tower:GetAttribute("Creator") == LocalPlayer.Name then
                 pcall(function() Remotes.Upgrade:FireServer(tostring(tower.Name)) end)
             end
         end
-        return true
+        fired = true
     end
-    return false, "All methods failed"
+    return fired, fired and nil or "Cannot fire Upgrade All button"
 end
 
 -- ОБЫЧНОЕ ВОСПРОИЗВЕДЕНИЕ
@@ -1154,14 +943,12 @@ local function WaitForActionGate(action, playbackStartedAt)
     return WaitUntil(function()
         if not State.Playing or IsGameEnded() then return true end
         local elapsed = os.clock() - playbackStartedAt
-        local currentWave = GetWave()
-        local hasMoney = cost <= 0 or GetMoney() >= cost
-        local hasWave = targetWave <= 0 or currentWave >= targetWave
         local hasTime = elapsed >= recordedAt
-        if targetWave > 0 and currentWave > targetWave then hasTime = true end
-        if targetWave > 0 and currentWave >= targetWave and not hasTime then hasTime = true end
+        local hasMoney = cost <= 0 or GetMoney() >= cost
+        local hasWave = targetWave <= 0 or GetWave() >= targetWave
         if State.PlaybackMode == "Time" then return hasTime
         elseif State.PlaybackMode == "Money" then return hasMoney end
+        if targetWave > 0 and GetWave() > targetWave then hasTime = true end
         return hasWave and hasTime and hasMoney
     end, 600, 0.05)
 end
@@ -1175,21 +962,27 @@ local function PlayPlace(action)
         State.UsedRuntimeTowers[existing] = true
         return true
     end
+    local deadline = os.clock() + 180
     local estimatedCost = tonumber(action.EstimatedCost) or 0
-    if GetMoney() < estimatedCost and GetMoney() >= 0 then
-        WaitUntil(function() return GetMoney() >= estimatedCost or GetMoney() < 0 end, 30, 0.2)
-    end
-    Remotes.Place:FireServer(action.Unit, placement, false)
-    task.spawn(function()
-        local success, tower = WaitUntil(function()
-            return FindMatchingRuntimeTower(action)
-        end, 3, 0.1)
-        if success and tower then
-            State.RuntimeHandles[action.Handle] = tower
-            State.UsedRuntimeTowers[tower] = true
+    while State.Playing and os.clock() < deadline and not IsGameEnded() do
+        existing = FindMatchingRuntimeTower(action)
+        if existing then
+            State.RuntimeHandles[action.Handle] = existing
+            State.UsedRuntimeTowers[existing] = true
+            return true
         end
-    end)
-    return true
+        if GetMoney() >= estimatedCost or GetMoney() < 0 then
+            Remotes.Place:FireServer(action.Unit, placement, false)
+            local success, tower = WaitUntil(function() return FindMatchingRuntimeTower(action) end, 3, 0.1)
+            if success and tower then
+                State.RuntimeHandles[action.Handle] = tower
+                State.UsedRuntimeTowers[tower] = true
+                return true
+            end
+        end
+        task.wait(0.5)
+    end
+    return false, "Place timed out"
 end
 
 local function ResolveHandle(handle)
@@ -1202,23 +995,30 @@ local function PlayUpgrade(action)
     local ok = PlayUpgradeAll()
     if ok then return true end
     local tower = ResolveHandle(action.Handle)
-    if not tower then return true end
+    if not tower then return false, "Tower handle is missing: " .. tostring(action.Handle) end
     local targetLevel = tonumber(action.ToLevel) or ((tonumber(action.FromLevel) or 0) + 1)
     local estimatedCost = tonumber(action.EstimatedCost) or 0
-    local fundsUnlocked = estimatedCost <= 0
     local deadline = os.clock() + 180
+    local fundsUnlocked = estimatedCost <= 0
     while State.Playing and tower.Parent == TowerDataFolder and os.clock() < deadline and not IsGameEnded() do
         local currentLevel = tonumber(tower:GetAttribute("Upgrade")) or 0
         if currentLevel >= targetLevel then return true end
         if not fundsUnlocked and (GetMoney() >= estimatedCost or GetMoney() < 0) then fundsUnlocked = true end
         if fundsUnlocked then
+            local levelBeforeRequest = currentLevel
             Remotes.Upgrade:FireServer(tostring(tower.Name))
-            task.wait(0.05)
+            local progressed = WaitUntil(function()
+                return tower.Parent ~= TowerDataFolder
+                    or (tonumber(tower:GetAttribute("Upgrade")) or 0) > levelBeforeRequest
+            end, 1, 0.03)
+            if tower.Parent ~= TowerDataFolder then return false, "Tower disappeared during upgrade" end
+            if (tonumber(tower:GetAttribute("Upgrade")) or 0) >= targetLevel then return true end
+            task.wait(progressed and 0.03 or 0.2)
         else
             task.wait(0.1)
         end
     end
-    return true
+    return false, "Upgrade timed out"
 end
 
 local function IsAutomaticRecordedTarget(index, action)
@@ -1237,52 +1037,65 @@ local function PlaySell(action)
     for _ = 1, 3 do
         if not State.Playing or tower.Parent ~= TowerDataFolder then return true end
         Remotes.Sell:FireServer(tostring(tower.Name))
-        task.wait(0.1)
-        if tower.Parent ~= TowerDataFolder then return true end
+        if WaitUntil(function() return tower.Parent ~= TowerDataFolder end, 3, 0.1) then return true end
+        task.wait(1)
     end
-    return true
+    return false, "Sell was not confirmed"
 end
 
 local function PlayTarget(action)
     local tower = ResolveHandle(action.Handle)
-    if not tower then return true end
-    for _ = 1, 5 do
-        if not State.Playing or tower.Parent ~= TowerDataFolder then return true end
+    if not tower then return false, "Tower handle is missing: " .. tostring(action.Handle) end
+    for _ = 1, 8 do
+        if not State.Playing or tower.Parent ~= TowerDataFolder then return false, "Tower disappeared" end
         if tower:GetAttribute("TargetMode") == action.Mode then return true end
         Remotes.Target:FireServer(tostring(tower.Name))
-        task.wait(0.1)
+        task.wait(0.25)
     end
-    return true
+    return tower:GetAttribute("TargetMode") == action.Mode, "Target mode was not confirmed"
 end
 
 local function PlayAbility(action)
     local tower = ResolveHandle(action.Handle)
-    if not tower then return true end
+    if not tower then return false, "Tower handle is missing: " .. tostring(action.Handle) end
     if not Remotes.Ability or not Remotes.Ability:IsA("RemoteFunction") then
-        return true
+        return false, "spawnTowerAbility is unavailable"
     end
+    local marker = tostring(action.Marker or "")
+    local previous = marker ~= "" and tower:GetAttribute(marker) or nil
     local abilityIndex = tonumber(action.AbilityIndex) or 1
-    pcall(function()
-        Remotes.Ability:InvokeServer(tostring(tower.Name), abilityIndex)
-    end)
-    task.wait(0.05)
-    return true
+    local ok, accepted = pcall(Remotes.Ability.InvokeServer, Remotes.Ability, tostring(tower.Name), abilityIndex)
+    if not ok then return false, "Ability request failed: " .. tostring(accepted) end
+    if accepted == false then return false, "Ability was rejected" end
+    if marker == "" then return true end
+    local confirmed = WaitUntil(function()
+        return tower.Parent ~= TowerDataFolder or tower:GetAttribute(marker) ~= previous
+    end, 5, 0.05)
+    return confirmed, confirmed and nil or "Ability was not confirmed"
 end
 
 local function PlayBoostLink(action)
     local sourceTower = ResolveHandle(action.SourceHandle)
     local targetTower = ResolveHandle(action.TargetHandle)
-    if not sourceTower or not targetTower then return true end
+    if not sourceTower then return false, "Boost source handle is missing: " .. tostring(action.SourceHandle) end
+    if not targetTower then return false, "Boost target handle is missing: " .. tostring(action.TargetHandle) end
     if not Remotes.BoostSelect or not Remotes.BoostSelect:IsA("RemoteEvent") then
-        return true
+        return false, "BoostSelect is unavailable"
     end
     local sourceId = tonumber(sourceTower.Name)
-    if not sourceId then return true end
-    pcall(function()
-        Remotes.BoostSelect:FireServer(sourceId, tostring(targetTower.Name))
-    end)
-    task.wait(0.1)
-    return true
+    local targetId = tostring(targetTower.Name)
+    if not sourceId then return false, "Boost source has an invalid server ID" end
+    if tostring(targetTower:GetAttribute("ClockBoost")) == tostring(sourceId) then return true end
+    Remotes.BoostSelect:FireServer(sourceId, targetId)
+    local confirmed = WaitUntil(function()
+        return not State.Playing or sourceTower.Parent ~= TowerDataFolder or targetTower.Parent ~= TowerDataFolder
+            or tostring(targetTower:GetAttribute("ClockBoost")) == tostring(sourceId)
+    end, 5, 0.05)
+    if not State.Playing then return false, "Playback stopped while linking boost" end
+    if sourceTower.Parent ~= TowerDataFolder or targetTower.Parent ~= TowerDataFolder then
+        return false, "Boost tower disappeared"
+    end
+    return confirmed, confirmed and nil or "Boost link was not confirmed"
 end
 
 local function StopPlayback(reason)
@@ -1303,15 +1116,11 @@ local function StartPlayback()
     State.UsedRuntimeTowers = setmetatable({}, { __mode = "k" })
     task.spawn(function()
         SetStatus("Playback", string.format("Running %s", State.ProfileName))
-        local camera = Workspace.CurrentCamera
-        if camera then
-            camera.CFrame = camera.CFrame * CFrame.Angles(
-                math.rad(math.random(-30, 30)),
-                math.rad(math.random(-30, 30)),
-                0
-            )
-        end
         local playbackStartedAt = os.clock()
+        while State.Playing and not IsGameEnded() and GetWave() < 1 do
+            playbackStartedAt = os.clock()
+            task.wait(0.05)
+        end
         for index, action in ipairs(State.Actions) do
             if not State.Playing or IsGameEnded() then break end
             if index == 1 then State.PlaybackFirstActionArmed = true end
@@ -1329,7 +1138,8 @@ local function StartPlayback()
             elseif action.Type == "BoostLink" then success, message = PlayBoostLink(action)
             else success, message = false, "Unknown action type: " .. tostring(action.Type) end
             if not success then
-                SetStatus("Warning", string.format("Action %d failed: %s", index, message or "unknown error"))
+                StopPlayback(string.format("Action %d failed: %s", index, message or "unknown error"))
+                return
             end
             if index == 1 then State.PlaybackFirstActionDone = true end
         end
@@ -1379,7 +1189,6 @@ task.spawn(function()
             wasMatchReady = false
             speedReadySince = nil
             startupSpeedReset = false
-            State.Chapter9SpeedSet = false
         elseif not wasMatchReady then
             wasMatchReady = true
             speedReadySince = nil
@@ -1406,17 +1215,7 @@ task.spawn(function()
             pcall(function() Remotes.Skip:FireServer(true) end)
         end
         local speedEligible = State.AutoSpeed and macroAutomationReady and matchReady and Remotes.Speed and not ended
-        if State.Chapter9Mode and matchReady and not ended then
-            local currentWave = GetWave()
-            if currentWave >= 1 and not State.Chapter9SpeedSet then
-                if currentWave == 1 then
-                    ApplySpeed(1)
-                elseif currentWave >= 2 then
-                    ApplySpeed(4)
-                    State.Chapter9SpeedSet = true
-                end
-            end
-        elseif speedEligible then
+        if speedEligible then
             if speedReadySince == nil then
                 speedReadySince = now
             elseif now - speedReadySince >= State.SpeedScaleDelay then
@@ -1427,36 +1226,15 @@ task.spawn(function()
             speedReadySince = nil
         end
         if ended and not replayLatched then
-    replayLatched = true
-
-    local shouldCount = false
-    if State.AutoReplay then
-        shouldCount = true
-    else
-        if State.LastCountedJobId ~= game.JobId then
-            shouldCount = true
-        end
-    end
-
-    if State.AutoBackLobby and shouldCount then
-        State.LastCountedJobId = game.JobId
-        State.MatchesCompleted = State.MatchesCompleted + 1
-        if State.MatchesCompleted >= State.MatchesBeforeLobby then
-            State.PendingLobbyReturn = true
-            SetStatus("Match cycle complete", "Waiting 5s before lobby")
-            local lobbyWaitUntil = os.clock() + 5
-            task.spawn(function()
-                while os.clock() < lobbyWaitUntil and State.Running do
-                    task.wait(0.5)
-                end
-                if State.Running and State.PendingLobbyReturn then
-                    local triggered, message = TriggerBackLobbyButton()
-                    if not triggered then
-                        SetStatus("Lobby button waiting", tostring(message) .. " | retrying")
-                    end
-                end
-            end)
-        else
+            replayLatched = true
+            if State.AutoBackLobby and State.LastCountedJobId ~= game.JobId then
+                State.LastCountedJobId = game.JobId
+                State.MatchesCompleted = State.MatchesCompleted + 1
+                if State.MatchesCompleted >= State.MatchesBeforeLobby then
+                    State.PendingLobbyReturn = true
+                    SetStatus("Match cycle complete", "Using the game's Return to Lobby button")
+                    task.wait(math.random(1, 2))
+                else
                     SetStatus("Match counted", string.format("%d/%d matches before lobby",
                         State.MatchesCompleted, State.MatchesBeforeLobby))
                 end
@@ -1464,8 +1242,7 @@ task.spawn(function()
                 if Gui.SaveConfigNow then Gui.SaveConfigNow()
                 elseif Gui.QueueSave then Gui.QueueSave() end
             end
-            SendMatchEndWebhook()
-             local lobbyReturnTriggered = false
+            local lobbyReturnTriggered = false
             if State.PendingLobbyReturn then
                 local message
                 lobbyReturnTriggered, message = TriggerBackLobbyButton()
@@ -1473,9 +1250,9 @@ task.spawn(function()
                     SetStatus("Lobby button waiting", tostring(message) .. " | retrying")
                     task.spawn(function()
                         local retryMessage = message
-                        for _ = 1, 40 do
+                        for _ = 1, 20 do
                             if not State.Running or not State.PendingLobbyReturn then return end
-                            task.wait(1)
+                            task.wait(0.5)
                             local triggered
                             triggered, retryMessage = TriggerBackLobbyButton()
                             if triggered then
@@ -1483,10 +1260,7 @@ task.spawn(function()
                                 return
                             end
                         end
-                        SetStatus("Lobby button failed", "Teleporting via service")
-                        pcall(function()
-                            TeleportService:Teleport(LobbyPlaceId, LocalPlayer)
-                        end)
+                        SetStatus("Lobby button failed", tostring(retryMessage))
                     end)
                 end
             end
@@ -1495,9 +1269,9 @@ task.spawn(function()
                 restartAfterReplay = not State.PendingLobbyReturn and State.PlaybackEnabled and #State.Actions > 0
                 pcall(function() Remotes.Replay:FireServer() end)
             end
-          elseif not ended then
+        elseif not ended then
             replayLatched = false
-            if restartAfterReplay and not State.Playing and not State.PendingLobbyReturn then
+            if restartAfterReplay and not State.Playing then
                 restartAfterReplay = false
                 local started, message = StartPlayback()
                 if started and Gui.SetPlaybackToggle then Gui.SetPlaybackToggle(true)
@@ -1565,7 +1339,7 @@ if type(Config.LobbyModifiers) == "table" then
     end
 end
 State.AutoBackLobby = Config.AutoBackLobby == true
-State.MatchesBeforeLobby = math.max(1, math.floor(tonumber(Config.MatchesBeforeLobby) or 3))
+State.MatchesBeforeLobby = math.max(1, math.floor(tonumber(Config.MatchesBeforeLobby) or 5))
 State.MatchesCompleted = math.max(0, math.floor(tonumber(Config.MatchesCompleted) or 0))
 State.LastCountedJobId = tostring(Config.LastCountedJobId or "")
 State.PendingLobbyReturn = Config.PendingLobbyReturn == true
@@ -1607,73 +1381,32 @@ end
 Gui.QueueSave = QueueSave
 Gui.SaveConfigNow = SaveConfig
 
--- ============ ИСПРАВЛЕНИЕ БЕСКОНЕЧНОГО ЦИКЛА ЛОББИ ============
 if State.PendingLobbyReturn then
-    -- Проверяем, не в лобби ли мы уже
-    local isInLobby = false
-    
-    -- Способ 1: по PlaceId
     if game.PlaceId == LobbyPlaceId then
-        isInLobby = true
-    end
-    
-    -- Способ 2: по наличию GameEnded GUI. Если GameEnded нет — мы не в матче, значит в лобби
-    if not isInLobby then
-        local gameEnded = GetGameEndedGui()
-        if not gameEnded then
-            isInLobby = true
-        end
-    end
-    
-    -- Способ 3: по отсутствию TowerDataFolder. Если TowerDataFolder нет — мы не в матче
-    if not isInLobby then
-        if not TowerDataFolder then
-            isInLobby = true
-        end
-    end
-    
-    if isInLobby then
-        -- Мы в лобби. Сбрасываем флаг, чтобы не было цикла.
         State.PendingLobbyReturn = false
         State.MatchesCompleted = 0
         State.LastCountedJobId = ""
         SaveConfig()
-        Notify("Lobby return", "Уже в лобби. Флаг сброшен.")
     else
-        -- Мы в матче. Пытаемся вернуться в лобби.
-        task.delay(3, function()
+        task.delay(1, function()
             if State.Running and State.PendingLobbyReturn then
-                if IsGameEnded() then
-                    local triggered, buttonMessage = TriggerBackLobbyButton()
-                    if not triggered then
-                        local ok, teleportMessage = pcall(function()
-                            TeleportService:Teleport(LobbyPlaceId, LocalPlayer)
-                        end)
-                        if not ok then
-                            Notify("Lobby return failed", tostring(buttonMessage) .. " | " .. tostring(teleportMessage))
-                        end
+                local triggered, buttonMessage = TriggerBackLobbyButton()
+                if not triggered then
+                    local ok, teleportMessage = pcall(function() TeleportService:Teleport(LobbyPlaceId, LocalPlayer) end)
+                    if not ok then
+                        Notify("Lobby return failed", tostring(buttonMessage) .. " | " .. tostring(teleportMessage))
                     end
-                else
-                    -- Матч ещё идёт, но флаг стоит. Значит, это устаревший флаг.
-                    -- Сбрасываем, чтобы не было цикла.
-                    State.PendingLobbyReturn = false
-                    State.MatchesCompleted = 0
-                    State.LastCountedJobId = ""
-                    SaveConfig()
-                    Notify("Lobby flag reset", "Флаг возврата сброшен, матч ещё идёт.")
                 end
             end
         end)
     end
 end
--- ============ КОНЕЦ ИСПРАВЛЕНИЯ ============
 
 local LobbyTab = Window:Tab({ Title = "Lobby", Icon = "house" })
 local MacrosTab = Window:Tab({ Title = "Macros", Icon = "clapperboard" })
 local PlayerTab = Window:Tab({ Title = "Player Actions", Icon = "user" })
 local MiscTab = Window:Tab({ Title = "Misc", Icon = "settings" })
 local WebhookTab = Window:Tab({ Title = "Webhook", Icon = "webhook" })
-local Chapter9Tab = Window:Tab({ Title = "Chapter 9", Icon = "zap" })
 
 -- LOBBY TAB
 LobbyTab:Section({ Title = "Lobby Automation", Desc = "Ready and replay controls" })
@@ -1874,7 +1607,7 @@ LobbyTab:Toggle({
 })
 
 LobbyTab:Input({
-    Title = "Matches Before Lobby", Placeholder = "3", Value = tostring(State.MatchesBeforeLobby),
+    Title = "Matches Before Lobby", Placeholder = "5", Value = tostring(State.MatchesBeforeLobby),
     Callback = function(value)
         local amount = tonumber(tostring(value):match("%d+"))
         if amount then
@@ -1957,28 +1690,6 @@ task.spawn(function()
         task.wait(1)
     end
 end)
-
--- CHAPTER 9 TAB
-Chapter9Tab:Section({ Title = "Chapter 9 Mode", Desc = "Wave 1 = x1. Wave 2+ = x4 (set once)" })
-
-Chapter9Tab:Toggle({
-    Title = "Enable Chapter 9 Mode",
-    Value = false,
-    Callback = function(value)
-        State.Chapter9Mode = value == true
-        State.Chapter9SpeedSet = false
-        if value then
-            Notify("Chapter 9", "Mode ON — x1 on wave 1, x4 from wave 2")
-        else
-            Notify("Chapter 9", "Mode OFF")
-        end
-    end,
-})
-
-Chapter9Tab:Paragraph({
-    Title = "How it works",
-    Desc = "Wave 1: speed x1, macro runs normally. Wave 2+: speed x4 (set once). New match resets the cycle.",
-})
 
 -- WEBHOOK TAB
 WebhookTab:Section({ Title = "Discord Webhook", Desc = "Optional match notifications" })
@@ -2401,13 +2112,8 @@ if State.ProfileName ~= "" then
 end
 
 if State.PlaybackEnabled and #State.Actions > 0 then
-    task.spawn(function()
-        WaitUntil(function()
-            return TowerDataFolder ~= nil and TowersFolder ~= nil and Remotes.Place ~= nil
-        end, 60, 0.1)
-        if State.PlaybackEnabled and #State.Actions > 0 then
-            StartEnabledPlayback()
-        end
+    task.delay(math.random(1, 2), function()
+        if State.PlaybackEnabled and #State.Actions > 0 then StartEnabledPlayback() end
     end)
 end
 
