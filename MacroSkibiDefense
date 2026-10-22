@@ -46,10 +46,7 @@ local function removeDuplicates(arr)
     return result
 end
 
-local function rand(a, b)
-    return a + math.random() * (b - a)
-end
-
+local function rand(a, b) return a + math.random() * (b - a) end
 local function humanDelay(base, spread)
     local d = base + rand(-spread, spread)
     if d < 0.01 then d = 0.01 end
@@ -62,7 +59,6 @@ local function sanitize(name)
 end
 
 local function cframeToArray(cf) return { cf:GetComponents() } end
-
 local function arrayToCFrame(arr)
     if type(arr) ~= "table" or #arr < 12 then return nil end
     return CFrame.new(table.unpack(arr, 1, 12))
@@ -73,7 +69,6 @@ local function playerProfilePath(name) return MACRO_FOLDER .. "/" .. sanitize(na
 
 local State = {
     Running = true,
-
     MasterSession         = 0,
     MovingSession         = 0,
     AutomationSession     = 0,
@@ -201,7 +196,6 @@ local function waitUntil(cond, timeout, interval)
 end
 
 local function getGui() return LocalPlayer:FindFirstChildOfClass("PlayerGui") end
-
 local function gameEnded()
     local ge = getGui() and getGui():FindFirstChild("GameEnded")
     return ge and ge.Enabled == true or false
@@ -327,8 +321,7 @@ local function installAbilityClickHook()
         if btn:GetAttribute("__SkibidiHooked") then return end
         btn:SetAttribute("__SkibidiHooked", true)
 
-        local conn
-        conn = btn.InputBegan:Connect(function(input)
+        local conn = btn.InputBegan:Connect(function(input)
             if input.UserInputType ~= Enum.UserInputType.MouseButton1
                 and input.UserInputType ~= Enum.UserInputType.Touch then return end
 
@@ -345,19 +338,14 @@ local function installAbilityClickHook()
             local handle = meta and meta.Handle or (towerId or "Global")
 
             local action = {
-                Type = "Ability",
-                Handle = handle,
-                TowerId = towerId,       
-                Unit = unitId,
-                AbilityIndex = idx,
-                Wave = getWave(),
+                Type = "Ability", Handle = handle, TowerId = towerId, Unit = unitId,
+                AbilityIndex = idx, Wave = getWave(),
                 RecordedAt = os.clock() - (State.RecordStartedAt or 0),
             }
 
             if State.Recording then
                 local last = State.Actions[#State.Actions]
-                if last and last.Type == "Ability"
-                    and last.Marker == tostring(btn)
+                if last and last.Type == "Ability" and last.Marker == tostring(btn)
                     and os.clock() - State.PendingAbilityClickAt <= 0.35 then
                     last.AbilityIndex = idx
                 else
@@ -381,7 +369,6 @@ local function installAbilityClickHook()
         addConn(State.Connections, gui.DescendantAdded:Connect(hookButton))
     end
 end
-
 task.spawn(installAbilityClickHook)
 
 local function getBackButton()
@@ -429,9 +416,7 @@ local function forceReturnToLobby()
     while State.Running and State.PendingLobbyReturn
         and os.clock() < deadline and game.JobId == startJob do
         local btn = getBackButton()
-        if btn and btn.Visible then
-            tryFireBackButton(btn)
-        end
+        if btn and btn.Visible then tryFireBackButton(btn) end
         humanDelay(0.5, 0.25)
     end
 
@@ -446,7 +431,6 @@ local function forceReturnToLobby()
 end
 
 local MOVE_POINTS = 12
-
 local function getChar()
     local c = LocalPlayer.Character
     if not c then return nil, nil end
@@ -458,18 +442,12 @@ end
 
 local function stopMove()
     local r, h = getChar()
-    if r and h then
-        h.AutoRotate = true
-        h:MoveTo(r.Position)
-    end
+    if r and h then h.AutoRotate = true; h:MoveTo(r.Position) end
 end
 
 local function jump(h)
     if not h or h.Health <= 0 then return end
-    pcall(function()
-        h.Jump = true
-        h:ChangeState(Enum.HumanoidStateType.Jumping)
-    end)
+    pcall(function() h.Jump = true; h:ChangeState(Enum.HumanoidStateType.Jumping) end)
 end
 
 local function getMapBounds()
@@ -494,10 +472,7 @@ end
 local function walkTo(session, dest)
     local r, h = getChar()
     if not r or not h then return false end
-    local path = PathfindingService:CreatePath({
-        AgentRadius = 2, AgentHeight = 5, AgentCanJump = true,
-        AgentCanClimb = true, WaypointSpacing = 8,
-    })
+    local path = PathfindingService:CreatePath({ AgentRadius = 2, AgentHeight = 5, AgentCanJump = true, AgentCanClimb = true, WaypointSpacing = 8 })
     local ok = pcall(function() path:ComputeAsync(r.Position, dest) end)
     if not ok or path.Status ~= Enum.PathStatus.Success then return false end
     local wps = path:GetWaypoints()
@@ -507,32 +482,20 @@ local function walkTo(session, dest)
         if not State.Running or not State.MovingAround or session ~= State.MovingSession then return false end
         r, h = getChar()
         if not r or not h then return false end
-
-        if wp.Action == Enum.PathWaypointAction.Jump or wp.Position.Y > r.Position.Y + 1.5 then
-            jump(h)
-            humanDelay(0.025, 0.015)
-        end
-
+        if wp.Action == Enum.PathWaypointAction.Jump or wp.Position.Y > r.Position.Y + 1.5 then jump(h); humanDelay(0.025, 0.015) end
         local done = nil
         local conn = h.MoveToFinished:Connect(function(reached) done = reached == true end)
         local jitter = Vector3.new(rand(-0.6, 0.6), 0, rand(-0.6, 0.6))
         h:MoveTo(wp.Position + jitter)
-
-        local startT = os.clock()
-        local lastProg = startT
-        local lastJmp = 0
+        local startT = os.clock(); local lastProg = startT; local lastJmp = 0
         local best = (r.Position - wp.Position).Magnitude
-
         while done == nil and State.Running and State.MovingAround and session == State.MovingSession do
             humanDelay(0.05, 0.02)
             r, h = getChar()
             if not r or not h then break end
             local cur = (r.Position - wp.Position).Magnitude
-            if cur <= best - 0.5 then
-                best = cur; lastProg = os.clock()
-            elseif os.clock() - lastProg >= 0.8 and os.clock() - lastJmp >= 0.8 then
-                jump(h); lastJmp = os.clock()
-            end
+            if cur <= best - 0.5 then best = cur; lastProg = os.clock()
+            elseif os.clock() - lastProg >= 0.8 and os.clock() - lastJmp >= 0.8 then jump(h); lastJmp = os.clock() end
             if os.clock() - startT >= 8 then break end
         end
         conn:Disconnect()
@@ -546,16 +509,13 @@ local function moveLoop(session)
         local r, h = getChar()
         local c, s = getMapBounds()
         local map = Workspace:FindFirstChild("Map")
-        if not r or not h or not c or not s or not map then
-            humanDelay(1.0, 0.4)
+        if not r or not h or not c or not s or not map then humanDelay(1.0, 0.4)
         else
             h.AutoRotate = true
             local scales = { 0.42, 0.34, 0.26, 0.18, 0.10 }
-            local bx = math.max(s.X, 25)
-            local bz = math.max(s.Z, 25)
+            local bx = math.max(s.X, 25); local bz = math.max(s.Z, 25)
             local rel = r.Position - c
             local ang0 = math.atan2(rel.Z / bz, rel.X / bx)
-
             for i = 1, MOVE_POINTS do
                 if not State.Running or not State.MovingAround or session ~= State.MovingSession then break end
                 local ang = ang0 + (math.pi * 2 * i) / MOVE_POINTS + rand(-0.4, 0.4)
@@ -564,21 +524,13 @@ local function moveLoop(session)
                 if not r or not h then break end
                 local walked = false
                 for _, sc in ipairs(scales) do
-                    local tgt = getGround(map, c, s,
-                        c.X + math.cos(ang) * bx * sc,
-                        c.Z + math.sin(ang) * bz * sc)
+                    local tgt = getGround(map, c, s, c.X + math.cos(ang) * bx * sc, c.Z + math.sin(ang) * bz * sc)
                     if tgt and walkTo(session, tgt) then walked = true; break end
                 end
                 if not walked then humanDelay(0.35, 0.2) end
             end
-
             local cam = Workspace.CurrentCamera
-            if cam then
-                cam.CFrame = cam.CFrame * CFrame.Angles(
-                    math.rad(rand(-2, 2)),
-                    math.rad(rand(-12, 12)),
-                    0)
-            end
+            if cam then cam.CFrame = cam.CFrame * CFrame.Angles(math.rad(rand(-2, 2)), math.rad(rand(-12, 12)), 0) end
         end
     end
 end
@@ -588,20 +540,14 @@ local function setMoving(on)
     local s = State.MovingSession
     stopMove()
     State.MovingAround = on == true
-    if State.MovingAround then
-        task.spawn(function() moveLoop(s) end)
-    end
+    if State.MovingAround then task.spawn(function() moveLoop(s) end) end
 end
 
 addConn(State.Connections, LocalPlayer.CharacterAdded:Connect(function()
     if not State.MovingAround then return end
     State.MovingSession = State.MovingSession + 1
     local s = State.MovingSession
-    task.delay(0.6, function()
-        if State.MovingAround and s == State.MovingSession then
-            task.spawn(function() moveLoop(s) end)
-        end
-    end)
+    task.delay(0.6, function() if State.MovingAround and s == State.MovingSession then task.spawn(function() moveLoop(s) end) end end)
 end))
 
 local function httpPost(url, body)
@@ -612,40 +558,22 @@ local function httpPost(url, body)
         { name = "request",        fn = request },
         { name = "fluxus.request", fn = fluxus and fluxus.request },
         { name = "krnl.request",   fn = krnl and krnl.request },
-        { name = "game:HttpPost",  fn = game and game.HttpPost and function(opts)
-            return game:HttpPost(opts.Url, opts.Body, "application/json")
-        end },
+        { name = "game:HttpPost",  fn = game and game.HttpPost and function(opts) return game:HttpPost(opts.Url, opts.Body, "application/json") end },
     }
-
     for _, req in ipairs(requesters) do
         if type(req.fn) == "function" then
             local success, response = pcall(function()
-                return req.fn({
-                    Url = url,
-                    Method = "POST",
-                    Headers = { ["Content-Type"] = "application/json" },
-                    Body = body,
-                })
+                return req.fn({ Url = url, Method = "POST", Headers = { ["Content-Type"] = "application/json" }, Body = body })
             end)
-
             if success then
                 if type(response) == "table" then
                     local code = response.StatusCode or response.status or response.Status
                     if code then
-                        if code >= 200 and code < 300 then
-                            return true, req.name
-                        else
-                            warn("[Webhook] " .. req.name .. " HTTP " .. tostring(code))
-                        end
-                    else
-                        return true, req.name
-                    end
-                else
-                    return true, req.name
-                end
-            else
-                warn("[Webhook] " .. req.name .. " failed: " .. tostring(response))
-            end
+                        if code >= 200 and code < 300 then return true, req.name
+                        else warn("[Webhook] " .. req.name .. " HTTP " .. tostring(code)) end
+                    else return true, req.name end
+                else return true, req.name end
+            else warn("[Webhook] " .. req.name .. " failed: " .. tostring(response)) end
         end
     end
     return false, "all methods failed"
@@ -653,23 +581,13 @@ end
 
 local function isValidWebhook(url)
     url = tostring(url or "")
-    return url:match("^https://discord%.com/api/webhooks/") ~= nil
-        or url:match("^https://discordapp%.com/api/webhooks/") ~= nil
+    return url:match("^https://discord%.com/api/webhooks/") ~= nil or url:match("^https://discordapp%.com/api/webhooks/") ~= nil
 end
 
 local function sendWebhook(title, desc, color)
     if not State.WebhookEnabled then return false, "Webhook disabled" end
     if not isValidWebhook(State.WebhookURL) then return false, "URL not a Discord webhook" end
-    local payload = {
-        username = "Skibidi Defense Hub",
-        embeds = {{
-            title = tostring(title or "Hub"),
-            description = tostring(desc or ""),
-            color = tonumber(color) or 5793266,
-            footer = { text = "Skibidi Defense Hub" },
-            timestamp = DateTime.now():ToIsoDate(),
-        }},
-    }
+    local payload = { username = "Hub", embeds = {{ title = tostring(title or "Hub"), description = tostring(desc or ""), color = tonumber(color) or 5793266, footer = { text = "Hub" }, timestamp = DateTime.now():ToIsoDate() }} }
     local ok, enc = pcall(function() return HttpService:JSONEncode(payload) end)
     if not ok then return false, "JSON encode: " .. tostring(enc) end
     return httpPost(State.WebhookURL, enc)
@@ -678,59 +596,26 @@ end
 local function sendMatchEndWebhook()
     if not State.WebhookEnabled or not State.WebhookMatchEnd then return end
     if not isValidWebhook(State.WebhookURL) then return end
-
     local res = getMatchResult()
     local color = (res == "Victory") and 65280 or 16711680
     local stage = tostring(State.LobbyChapter) .. " (" .. tostring(State.LobbyMode) .. ")"
-
-    local payload = {
-        username = "Skibidi Defense Hub",
-        embeds = {{
-            title = "Match Report",
-            description = string.format("**Stage:** %s\n**Result:** %s", stage, res),
-            color = color,
-            fields = {
-                { name = "Player",
-                  value = string.format("Name: ||%s||\nMoney: %s\nBase HP: %s",
-                    LocalPlayer.Name, tostring(getMoney()), tostring(getBaseHp())),
-                  inline = false },
-                { name = "Match",
-                  value = string.format("Wave: %s\nMacro: %s\nCycle: %d/%d",
-                    tostring(getWave()),
-                    (State.ProfileName ~= "" and State.ProfileName or "None"),
-                    State.MatchesCompleted, State.MatchesBeforeLobby),
-                  inline = false },
-            },
-            footer = { text = "Skibidi Defense Hub" },
-            timestamp = DateTime.now():ToIsoDate(),
-        }},
-    }
+    local payload = { username = "Hub", embeds = {{ title = "Match Report", description = string.format("**Stage:** %s\n**Result:** %s", stage, res), color = color, fields = { { name = "Player", value = string.format("Name: ||%s||\nMoney: %s\nBase HP: %s", LocalPlayer.Name, tostring(getMoney()), tostring(getBaseHp())), inline = false }, { name = "Match", value = string.format("Wave: %s\nMacro: %s\nCycle: %d/%d", tostring(getWave()), (State.ProfileName ~= "" and State.ProfileName or "None"), State.MatchesCompleted, State.MatchesBeforeLobby), inline = false } }, footer = { text = "Hub" }, timestamp = DateTime.now():ToIsoDate() }} }
     local ok, enc = pcall(function() return HttpService:JSONEncode(payload) end)
     if ok then pcall(httpPost, State.WebhookURL, enc) end
 end
 
 local function saveProfile(name)
-    name = sanitize(name)
-    if name == "" then return false, "empty" end
-    if not HAS_FS then return false, "no fs" end
+    name = sanitize(name); if name == "" then return false, "empty" end; if not HAS_FS then return false, "no fs" end
     local payload = { Version = 4, PlaceId = game.PlaceId, Name = name, RecordedAt = os.time(), Actions = State.Actions }
-    local ok, enc = pcall(HttpService.JSONEncode, HttpService, payload)
-    if not ok then return false, enc end
-    pcall(writefile, profilePath(name), enc)
-    State.ProfileName = name
-    State.ProfileVersion = 4
-    return true
+    local ok, enc = pcall(HttpService.JSONEncode, HttpService, payload); if not ok then return false, enc end
+    pcall(writefile, profilePath(name), enc); State.ProfileName = name; State.ProfileVersion = 4; return true
 end
 
 local function loadProfile(name)
-    name = sanitize(name)
-    if name == "" or not HAS_FS or not isfile(profilePath(name)) then return false, "not found" end
+    name = sanitize(name); if name == "" or not HAS_FS or not isfile(profilePath(name)) then return false, "not found" end
     local ok, dec = pcall(function() return HttpService:JSONDecode(readfile(profilePath(name))) end)
     if not ok or type(dec) ~= "table" or type(dec.Actions) ~= "table" then return false, "invalid" end
-    State.ProfileName = name
-    State.ProfileVersion = tonumber(dec.Version) or 1
-    State.Actions = dec.Actions
-    return true
+    State.ProfileName = name; State.ProfileVersion = tonumber(dec.Version) or 1; State.Actions = dec.Actions; return true
 end
 
 local function listProfiles()
@@ -740,8 +625,7 @@ local function listProfiles()
         local n = p:match("([^\\/]+)%.json$")
         if n and n ~= "HubConfig" and not n:find("_player$") then r[#r + 1] = n end
     end
-    table.sort(r)
-    return r
+    table.sort(r); return r
 end
 
 local function listPlayerProfiles()
@@ -751,35 +635,25 @@ local function listPlayerProfiles()
         local n = p:match("([^\\/]+)_player%.json$")
         if n then r[#r + 1] = n end
     end
-    table.sort(r)
-    return r
+    table.sort(r); return r
 end
 
 local function towerModel(id, timeout)
     if not TowersFolder then return nil end
     local m
-    waitUntil(function()
-        m = TowersFolder:FindFirstChild(tostring(id))
-        return m ~= nil
-    end, timeout or 2, 0.05)
+    waitUntil(function() m = TowersFolder:FindFirstChild(tostring(id)); return m ~= nil end, timeout or 2, 0.05)
     return m
 end
 
 local function placeCF(t)
-    local m  = towerModel(t.Name, 2)
+    local m = towerModel(t.Name, 2)
     local bp = t:GetAttribute("BoostPos")
     if typeof(bp) == "Vector3" then
         local rot = CFrame.identity
-        if m and m:IsA("Model") then
-            local ok, pv = pcall(m.GetPivot, m)
-            if ok then rot = pv.Rotation end
-        end
+        if m and m:IsA("Model") then local ok, pv = pcall(m.GetPivot, m); if ok then rot = pv.Rotation end end
         return CFrame.new(bp + Vector3.new(0, 4.7, 0)) * rot
     end
-    if m and m:IsA("Model") then
-        local ok, pv = pcall(m.GetPivot, m)
-        if ok then return pv end
-    end
+    if m and m:IsA("Model") then local ok, pv = pcall(m.GetPivot, m); if ok then return pv end end
     return nil
 end
 
@@ -793,32 +667,13 @@ local StopRecording
 
 local function attachTower(tower, handle)
     if State.TowerMeta[tower] then return end
-    local meta = {
-        Handle = handle,
-        Level = tonumber(tower:GetAttribute("Upgrade")) or 0,
-        Sell = tonumber(tower:GetAttribute("SellPrice")) or 0,
-        PendCost = nil,
-        TargetMode = tower:GetAttribute("TargetMode"),
-        LastUp = -math.huge,
-        AbilityMarkers = {},
-        LastAbilityAction = nil,
-        LastAbilityAt = -math.huge,
-        ClockBoost = tower:GetAttribute("ClockBoost"),
-        LastBoostSrc = nil,
-        LastBoostAt = -math.huge,
-        PlaceRecorded = false,
-    }
-    for a, v in pairs(tower:GetAttributes()) do
-        if tostring(a):match("^ATTACK") then meta.AbilityMarkers[a] = v end
-    end
+    local meta = { Handle = handle, Level = tonumber(tower:GetAttribute("Upgrade")) or 0, Sell = tonumber(tower:GetAttribute("SellPrice")) or 0, PendCost = nil, TargetMode = tower:GetAttribute("TargetMode"), LastUp = -math.huge, AbilityMarkers = {}, LastAbilityAction = nil, LastAbilityAt = -math.huge, ClockBoost = tower:GetAttribute("ClockBoost"), LastBoostSrc = nil, LastBoostAt = -math.huge, PlaceRecorded = false }
+    for a, v in pairs(tower:GetAttributes()) do if tostring(a):match("^ATTACK") then meta.AbilityMarkers[a] = v end end
     State.TowerMeta[tower] = meta
 
     addConn(State.RecorderConnections, tower:GetAttributeChangedSignal("SellPrice"):Connect(function()
         local np = tonumber(tower:GetAttribute("SellPrice")) or meta.Sell
-        if np > meta.Sell then
-            meta.PendCost = math.max(0, (np - meta.Sell) * 2)
-            meta.LastUp = os.clock()
-        end
+        if np > meta.Sell then meta.PendCost = math.max(0, (np - meta.Sell) * 2); meta.LastUp = os.clock() end
         meta.Sell = np
     end))
 
@@ -826,81 +681,45 @@ local function attachTower(tower, handle)
         local nl = tonumber(tower:GetAttribute("Upgrade")) or meta.Level
         if State.Recording and nl > meta.Level then
             meta.LastUp = os.clock()
-            table.insert(State.Actions, {
-                Type = "Upgrade", Handle = meta.Handle,
-                FromLevel = meta.Level, ToLevel = nl,
-                EstimatedCost = meta.PendCost or 0,
-                Wave = getWave(), RecordedAt = os.clock() - State.RecordStartedAt,
-            })
+            table.insert(State.Actions, { Type = "Upgrade", Handle = meta.Handle, FromLevel = meta.Level, ToLevel = nl, EstimatedCost = meta.PendCost or 0, Wave = getWave(), RecordedAt = os.clock() - State.RecordStartedAt })
         end
-        meta.Level = nl
-        meta.PendCost = nil
+        meta.Level = nl; meta.PendCost = nil
     end))
 
     addConn(State.RecorderConnections, tower:GetAttributeChangedSignal("TargetMode"):Connect(function()
-        local nm = tower:GetAttribute("TargetMode")
-        local om = meta.TargetMode
+        local nm = tower:GetAttribute("TargetMode"); local om = meta.TargetMode
         local auto = badTarget(om) and os.clock() - meta.LastUp <= 0.5
         if State.Recording and nm and nm ~= om and not auto then
-            table.insert(State.Actions, {
-                Type = "Target", Handle = meta.Handle, Mode = nm,
-                Wave = getWave(), RecordedAt = os.clock() - State.RecordStartedAt,
-            })
+            table.insert(State.Actions, { Type = "Target", Handle = meta.Handle, Mode = nm, Wave = getWave(), RecordedAt = os.clock() - State.RecordStartedAt })
         end
         meta.TargetMode = nm
     end))
 
     addConn(State.RecorderConnections, tower:GetAttributeChangedSignal("ClockBoost"):Connect(function()
-        local ns = tower:GetAttribute("ClockBoost")
-        local os_ = meta.ClockBoost
-        meta.ClockBoost = ns
-        if not State.Recording or ns == nil
-            or tostring(ns) == "" or tostring(ns) == "0"
-            or tostring(ns) == tostring(os_) then return end
+        local ns = tower:GetAttribute("ClockBoost"); local os_ = meta.ClockBoost; meta.ClockBoost = ns
+        if not State.Recording or ns == nil or tostring(ns) == "" or tostring(ns) == "0" or tostring(ns) == tostring(os_) then return end
         local srcTower = TowerDataFolder:FindFirstChild(tostring(ns))
         if not srcTower then return end
         local srcMeta = State.TowerMeta[srcTower]
-        if not srcMeta then return end
-        if not srcMeta.PlaceRecorded or not meta.PlaceRecorded then return end
+        if not srcMeta or not srcMeta.PlaceRecorded or not meta.PlaceRecorded then return end
         if meta.LastBoostSrc == srcMeta.Handle and os.clock() - meta.LastBoostAt <= 0.5 then return end
-        meta.LastBoostSrc = srcMeta.Handle
-        meta.LastBoostAt = os.clock()
-        table.insert(State.Actions, {
-            Type = "BoostLink", SourceHandle = srcMeta.Handle, TargetHandle = meta.Handle,
-            Wave = getWave(), RecordedAt = os.clock() - State.RecordStartedAt,
-        })
+        meta.LastBoostSrc = srcMeta.Handle; meta.LastBoostAt = os.clock()
+        table.insert(State.Actions, { Type = "BoostLink", SourceHandle = srcMeta.Handle, TargetHandle = meta.Handle, Wave = getWave(), RecordedAt = os.clock() - State.RecordStartedAt })
     end))
 
     addConn(State.RecorderConnections, tower.AttributeChanged:Connect(function(attr)
         if not tostring(attr):match("^ATTACK") then return end
-        local prev = meta.AbilityMarkers[attr]
-        local val = tower:GetAttribute(attr)
-        meta.AbilityMarkers[attr] = val
+        local prev = meta.AbilityMarkers[attr]; local val = tower:GetAttribute(attr); meta.AbilityMarkers[attr] = val
         if not State.Recording then return end
         if os.clock() - State.PendingAbilityClickAt > 2 then return end
         if prev == val then return end
-
         local markerIndex = tonumber(tostring(attr):match("(%d+)$"))
         local abilityIndex = markerIndex or State.PendingAbilityIndex or 1
-        State.PendingAbilityClickAt = -math.huge
-        State.PendingAbilityIndex = 1
-
-        local now = os.clock()
-        local last = meta.LastAbilityAction
-        if last and last.Marker == attr and now - meta.LastAbilityAt <= 0.35 then
-            last.AbilityIndex = abilityIndex
-            meta.LastAbilityAt = now
-            return
-        end
-
-        local action = {
-            Type = "Ability", Handle = meta.Handle,
-            TowerId = tostring(tower.Name),
-            AbilityIndex = abilityIndex, Marker = attr,
-            Wave = getWave(), RecordedAt = now - State.RecordStartedAt,
-        }
-        meta.LastAbilityAction = action
-        meta.LastAbilityAt = now
+        State.PendingAbilityClickAt = -math.huge; State.PendingAbilityIndex = 1
+        local now = os.clock(); local last = meta.LastAbilityAction
+        if last and last.Marker == attr and now - meta.LastAbilityAt <= 0.35 then last.AbilityIndex = abilityIndex; meta.LastAbilityAt = now; return end
+        local action = { Type = "Ability", Handle = meta.Handle, TowerId = tostring(tower.Name), AbilityIndex = abilityIndex, Marker = attr, Wave = getWave(), RecordedAt = now - State.RecordStartedAt }
+        meta.LastAbilityAction = action; meta.LastAbilityAt = now
         table.insert(State.Actions, action)
     end))
 end
@@ -910,48 +729,31 @@ local function startRecording(profileName)
     if not matchReady() then return false, "enter match first" end
     profileName = sanitize(profileName)
     if profileName == "" then return false, "empty name" end
-
     disconnectAll(State.RecorderConnections)
-    State.Actions = {}
-    State.ProfileName = profileName
-    State.ProfileVersion = 4
-    State.RecordStartedAt = os.clock()
-    State.NextHandle = 1
+    State.Actions = {}; State.ProfileName = profileName; State.ProfileVersion = 4
+    State.RecordStartedAt = os.clock(); State.NextHandle = 1
     State.TowerMeta = setmetatable({}, { __mode = "k" })
-    State.PendingAbilityClickAt = -math.huge
-    State.PendingAbilityIndex = 1
-    State.Recording = true
-    State.RecordSession = State.RecordSession + 1
+    State.PendingAbilityClickAt = -math.huge; State.PendingAbilityIndex = 1
+    State.Recording = true; State.RecordSession = State.RecordSession + 1
 
     addConn(State.RecorderConnections, TowerDataFolder.ChildAdded:Connect(function(t)
         task.spawn(function()
             if not waitUntil(function() return own(t) and t:GetAttribute("ID") ~= nil end, 5, 0.05) then return end
             if not State.Recording then return end
-            local h = "T" .. State.NextHandle
-            State.NextHandle = State.NextHandle + 1
+            local h = "T" .. State.NextHandle; State.NextHandle = State.NextHandle + 1
             attachTower(t, h)
-            local cf = placeCF(t)
-            if not cf then return end
+            local cf = placeCF(t); if not cf then return end
             local sell = tonumber(t:GetAttribute("SellPrice")) or 0
-            table.insert(State.Actions, {
-                Type = "Place", Handle = h, Unit = tostring(t:GetAttribute("ID")),
-                CFrame = cframeToArray(cf), EstimatedCost = sell * 2,
-                Wave = getWave(), RecordedAt = os.clock() - State.RecordStartedAt,
-            })
-            local m = State.TowerMeta[t]
-            if m then m.PlaceRecorded = true end
+            table.insert(State.Actions, { Type = "Place", Handle = h, Unit = tostring(t:GetAttribute("ID")), CFrame = cframeToArray(cf), EstimatedCost = sell * 2, Wave = getWave(), RecordedAt = os.clock() - State.RecordStartedAt })
+            local m = State.TowerMeta[t]; if m then m.PlaceRecorded = true end
         end)
     end))
 
     addConn(State.RecorderConnections, TowerDataFolder.ChildRemoved:Connect(function(t)
-        local m = State.TowerMeta[t]
-        if not m then return end
+        local m = State.TowerMeta[t]; if not m then return end
         task.delay(0.15, function()
             if State.Recording and not gameEnded() then
-                table.insert(State.Actions, {
-                    Type = "Sell", Handle = m.Handle,
-                    Wave = getWave(), RecordedAt = os.clock() - State.RecordStartedAt,
-                })
+                table.insert(State.Actions, { Type = "Sell", Handle = m.Handle, Wave = getWave(), RecordedAt = os.clock() - State.RecordStartedAt })
             end
         end)
     end))
@@ -959,11 +761,7 @@ local function startRecording(profileName)
     local ge = getGui() and getGui():FindFirstChild("GameEnded")
     if ge then
         addConn(State.RecorderConnections, ge:GetPropertyChangedSignal("Enabled"):Connect(function()
-            if State.Recording and ge.Enabled then
-                task.defer(function()
-                    if State.Recording then StopRecording(true) end
-                end)
-            end
+            if State.Recording and ge.Enabled then task.defer(function() if State.Recording then StopRecording(true) end end) end
         end))
     end
     return true
@@ -971,13 +769,9 @@ end
 
 StopRecording = function(save)
     if not State.Recording then return false, "not recording" end
-    State.Recording = false
-    State.RecordSession = State.RecordSession + 1
+    State.Recording = false; State.RecordSession = State.RecordSession + 1
     disconnectAll(State.RecorderConnections)
-    if save then
-        local ok, msg = saveProfile(State.ProfileName)
-        if not ok then return false, msg end
-    end
+    if save then local ok, msg = saveProfile(State.ProfileName); if not ok then return false, msg end end
     return true
 end
 
@@ -990,14 +784,12 @@ end
 local function findRuntime(action)
     if not TowerDataFolder then return nil end
     for _, t in ipairs(TowerDataFolder:GetChildren()) do
-        if own(t) and not State.UsedRuntimeTowers[t]
-            and tostring(t:GetAttribute("ID")) == tostring(action.Unit) then
-            return t
-        end
+        if own(t) and not State.UsedRuntimeTowers[t] and tostring(t:GetAttribute("ID")) == tostring(action.Unit) then return t end
     end
     return nil
 end
 
+-- ИСПРАВЛЕННЫЙ playPlace
 local function playPlace(action)
     local cf = arrayToCFrame(action.CFrame)
     if not cf then return true end
@@ -1009,6 +801,7 @@ local function playPlace(action)
     end
     local cost = tonumber(action.EstimatedCost) or 0
     local deadline = os.clock() + 180
+    
     while State.Playing and os.clock() < deadline and not gameEnded() do
         ex = findRuntime(action)
         if ex then
@@ -1016,19 +809,23 @@ local function playPlace(action)
             State.UsedRuntimeTowers[ex] = true
             return true
         end
+        
         if getMoney() >= cost then
             if Remotes.Place then
                 local jitter = Vector3.new(rand(-0.3, 0.3), 0, rand(-0.3, 0.3))
                 pcall(function() Remotes.Place:FireServer(action.Unit, cf + jitter, false) end)
-                local ok, tower = waitUntil(function() return findRuntime(action) end, 3, 0.1)
-                if ok and tower then
+                
+                -- Ждем появления башни максимум 1 секунду
+                local success = waitUntil(function() return findRuntime(action) end, 1, 0.05)
+                if success then
+                    local tower = findRuntime(action)
                     State.RuntimeHandles[action.Handle] = tower
                     State.UsedRuntimeTowers[tower] = true
                     return true
                 end
             end
         end
-        humanDelay(0.9, 0.4)
+        humanDelay(0.2, 0.1) -- Если не поставилась, ждем 0.2с и пробуем снова
     end
     return true
 end
@@ -1047,10 +844,7 @@ local function playUpgrade(action)
         if unlocked and Remotes.Upgrade then
             local before = lvl
             pcall(function() Remotes.Upgrade:FireServer(tostring(t.Name)) end)
-            local ok = waitUntil(function()
-                return t.Parent ~= TowerDataFolder
-                    or (tonumber(t:GetAttribute("Upgrade")) or 0) > before
-            end, 1, 0.03)
+            local ok = waitUntil(function() return t.Parent ~= TowerDataFolder or (tonumber(t:GetAttribute("Upgrade")) or 0) > before end, 1, 0.03)
             if t.Parent ~= TowerDataFolder then return true end
             if (tonumber(t:GetAttribute("Upgrade")) or 0) >= target then return true end
             humanDelay(ok and 0.05 or 0.18, 0.03)
@@ -1085,27 +879,111 @@ local function playTarget(action)
     return true
 end
 
+local function findAbilityButtonForTower(towerId, abilityIndex)
+    local gui = getGui(); if not gui then return nil end
+    local candidates = {}
+    for _, o in ipairs(gui:GetDescendants()) do
+        if o:IsA("GuiButton") and isAbilityButton(o) then
+            local idx = inferAbilityIndex(o)
+            local btnTower = o:GetAttribute("TowerId")
+            if btnTower == nil or tostring(btnTower) == tostring(towerId) then table.insert(candidates, { btn = o, idx = idx }) end
+        end
+    end
+    if #candidates == 0 then return nil end
+    for _, c in ipairs(candidates) do if c.idx == abilityIndex then return c.btn end end
+    return candidates[1].btn
+end
+
+-- ИСПРАВЛЕННЫЙ playAbility
+local function playAbility(action)
+    local t = resolveH(action.Handle)
+    if not t and action.Unit then
+        for _, child in ipairs(TowerDataFolder:GetChildren()) do
+            if own(child) and tostring(child:GetAttribute("ID")) == tostring(action.Unit) then t = child; break end
+        end
+    end
+    if not t and action.TowerId then
+        t = TowerDataFolder:FindFirstChild(tostring(action.TowerId))
+    end
+    
+    -- Фоллбэк: если не нашли по ID, ищем ЛЮБУЮ свою башню, которая стоит на карте
+    if not t and TowerDataFolder then
+        for _, child in ipairs(TowerDataFolder:GetChildren()) do
+            if own(child) then t = child; break end
+        end
+    end
+
+    if not t then return true, "no tower for ability" end
+
+    local towerId
+    local attrId = t:GetAttribute("ID")
+    if attrId ~= nil then towerId = tostring(attrId) else towerId = tostring(t.Name) end
+    local idx = tonumber(action.AbilityIndex) or 1
+
+    humanDelay(0.3, 0.15)
+
+    local remoteOk = false
+    if Remotes.Ability then
+        if Remotes.Ability:IsA("RemoteEvent") then remoteOk = pcall(function() Remotes.Ability:FireServer(towerId, idx) end)
+        elseif Remotes.Ability:IsA("RemoteFunction") then remoteOk = pcall(function() Remotes.Ability:InvokeServer(towerId, idx) end) end
+    end
+
+    humanDelay(0.12, 0.06)
+
+    if not remoteOk then
+        local btn = findAbilityButtonForTower(towerId, idx)
+        if btn then
+            if type(firesignal) == "function" then pcall(firesignal, btn.MouseButton1Click)
+            elseif type(getconnections) == "function" then
+                local ok, conns = pcall(getconnections, btn.MouseButton1Click)
+                if ok and type(conns) == "table" then
+                    for _, c in ipairs(conns) do
+                        pcall(function() if type(c.Fire) == "function" then c:Fire() elseif type(c.Function) == "function" then c.Function() end end)
+                    end
+                end
+            end
+            humanDelay(0.1, 0.05)
+        end
+    end
+    return true
+end
+
+local function playBoost(action)
+    local src = resolveH(action.SourceHandle); local tgt = resolveH(action.TargetHandle)
+    if not src or not tgt then return true end
+    if not Remotes.BoostSelect or not Remotes.BoostSelect:IsA("RemoteEvent") then return true end
+    local sid = tonumber(src.Name); if not sid then return true end
+    if tostring(tgt:GetAttribute("ClockBoost")) == tostring(sid) then return true end
+    pcall(function() Remotes.BoostSelect:FireServer(sid, tostring(tgt.Name)) end)
+    waitUntil(function() return not State.Playing or src.Parent ~= TowerDataFolder or tgt.Parent ~= TowerDataFolder or tostring(tgt:GetAttribute("ClockBoost")) == tostring(sid) end, 5, 0.05)
+    humanDelay(0.15, 0.05); return true
+end
+
+-- ИСПРАВЛЕННЫЙ waitGate
 local function waitGate(action, startedAt)
     local rt = tonumber(action.RecordedAt) or 0
     local cost = tonumber(action.EstimatedCost) or 0
     local wv = tonumber(action.Wave) or 0
+    
     return waitUntil(function()
         if not State.Playing or gameEnded() then return true end
         local el = os.clock() - startedAt
         local hasT = el >= rt
         local hasM = cost <= 0 or getMoney() >= cost
         local hasW = wv <= 0 or getWave() >= wv
+        
         if State.PlaybackMode == "Time" then return hasT end
         if State.PlaybackMode == "Money" then return hasM end
         if wv > 0 and getWave() > wv then hasT = true end
+        
+        -- Ждем, пока появятся деньги
+        if cost > 0 and getMoney() < cost then return false end
+        
         return hasW and hasT and hasM
     end, 600, rand(0.05, 0.12))
 end
 
-local function stopPlayback(reason)
-    State.Playing = false
-    State.PlaybackSession = State.PlaybackSession + 1
-end
+local function stopPlayback(reason) State.Playing = false; State.PlaybackSession = State.PlaybackSession + 1 end
 
 local function startPlayback()
     if State.Recording then return false, "stop recording first" end
@@ -1113,27 +991,18 @@ local function startPlayback()
     if State.Playing then return false, "already playing" end
     if #State.Actions == 0 then return false, "no actions" end
 
-    State.Playing = true
-    State.AutoPlaybackStarted = true
-    State.PlaybackFirstActionArmed = false
-    State.RuntimeHandles = {}
-    State.UsedRuntimeTowers = setmetatable({}, { __mode = "k" })
+    State.Playing = true; State.AutoPlaybackStarted = true; State.PlaybackFirstActionArmed = false
+    State.RuntimeHandles = {}; State.UsedRuntimeTowers = setmetatable({}, { __mode = "k" })
     State.PlaybackSession = State.PlaybackSession + 1
     local session = State.PlaybackSession
 
     task.spawn(function()
         local startedAt = os.clock()
-        while State.Playing and session == State.PlaybackSession
-            and not gameEnded() and getWave() < 1 do
-            startedAt = os.clock()
-            humanDelay(0.06, 0.02)
-        end
-
+        while State.Playing and session == State.PlaybackSession and not gameEnded() and getWave() < 1 do startedAt = os.clock(); humanDelay(0.06, 0.02) end
         for i, a in ipairs(State.Actions) do
             if not State.Playing or session ~= State.PlaybackSession or gameEnded() then break end
             if i == 1 then State.PlaybackFirstActionArmed = true end
             if not waitGate(a, startedAt) then break end
-
             local ok = true
             if a.Type == "Place" then ok = playPlace(a)
             elseif a.Type == "Upgrade" then ok = playUpgrade(a)
@@ -1144,241 +1013,46 @@ local function startPlayback()
             end
             if not ok then break end
         end
-
-        if session == State.PlaybackSession then
-            State.Playing = false
-        end
+        if session == State.PlaybackSession then State.Playing = false end
     end)
-    return true
-end
-local function findAbilityButtonForTower(towerId, abilityIndex)
-    local gui = getGui()
-    if not gui then return nil end
-    local candidates = {}
-    for _, o in ipairs(gui:GetDescendants()) do
-        if o:IsA("GuiButton") and isAbilityButton(o) then
-            local idx = inferAbilityIndex(o)
-            local btnTower = o:GetAttribute("TowerId")
-            if btnTower == nil or tostring(btnTower) == tostring(towerId) then
-                table.insert(candidates, { btn = o, idx = idx })
-            end
-        end
-    end
-    if #candidates == 0 then return nil end
-    for _, c in ipairs(candidates) do
-        if c.idx == abilityIndex then return c.btn end
-    end
-    return candidates[1].btn
-end
-
-local function playAbility(action)
-    local t = resolveH(action.Handle)
-    if not t and action.Unit then
-        for _, child in ipairs(TowerDataFolder:GetChildren()) do
-            if own(child) and tostring(child:GetAttribute("ID")) == tostring(action.Unit) then
-                t = child; break
-            end
-        end
-    end
-    if not t and action.TowerId then
-        t = TowerDataFolder:FindFirstChild(tostring(action.TowerId))
-    end
-
-    if not t then
-        return true, "no tower for ability"
-    end
-
-    local towerId
-    local attrId = t:GetAttribute("ID")
-    if attrId ~= nil then
-        towerId = tostring(attrId)
-    else
-        towerId = tostring(t.Name)
-    end
-
-    local idx = tonumber(action.AbilityIndex) or 1
-
-    humanDelay(0.3, 0.15)
-
-    local remoteOk = false
-    if Remotes.Ability then
-        if Remotes.Ability:IsA("RemoteEvent") then
-            remoteOk = pcall(function() Remotes.Ability:FireServer(towerId, idx) end)
-        elseif Remotes.Ability:IsA("RemoteFunction") then
-            remoteOk = pcall(function() Remotes.Ability:InvokeServer(towerId, idx) end)
-        end
-    end
-
-    humanDelay(0.12, 0.06)
-
-    if not remoteOk then
-        local btn = findAbilityButtonForTower(towerId, idx)
-        if btn then
-            if type(firesignal) == "function" then
-                pcall(firesignal, btn.MouseButton1Click)
-            elseif type(getconnections) == "function" then
-                local ok, conns = pcall(getconnections, btn.MouseButton1Click)
-                if ok and type(conns) == "table" then
-                    for _, c in ipairs(conns) do
-                        pcall(function()
-                            if type(c.Fire) == "function" then c:Fire()
-                            elseif type(c.Function) == "function" then c.Function() end
-                        end)
-                    end
-                end
-            end
-            humanDelay(0.1, 0.05)
-        end
-    end
-
-    return true
-end
-
-local function playBoost(action)
-    local src = resolveH(action.SourceHandle)
-    local tgt = resolveH(action.TargetHandle)
-    if not src or not tgt then return true end
-    if not Remotes.BoostSelect or not Remotes.BoostSelect:IsA("RemoteEvent") then return true end
-    local sid = tonumber(src.Name)
-    if not sid then return true end
-    if tostring(tgt:GetAttribute("ClockBoost")) == tostring(sid) then return true end
-    pcall(function() Remotes.BoostSelect:FireServer(sid, tostring(tgt.Name)) end)
-    waitUntil(function()
-        return not State.Playing
-            or src.Parent ~= TowerDataFolder
-            or tgt.Parent ~= TowerDataFolder
-            or tostring(tgt:GetAttribute("ClockBoost")) == tostring(sid)
-    end, 5, 0.05)
-    humanDelay(0.15, 0.05)
     return true
 end
 
 local function startPlayerRec(name)
     if State.Playing then return false, "stop playback first" end
-    name = sanitize(name)
-    if name == "" then return false, "empty" end
-
-    State.PlayerActions = {}
-    State.PlayerRecordingProfileName = name
-    State.PlayerRecordingStartedAt = os.clock()
-    State.PlayerRecording = true
-    State.PlayerRecordingConnections = {}
-
+    name = sanitize(name); if name == "" then return false, "empty" end
+    State.PlayerActions = {}; State.PlayerRecordingProfileName = name
+    State.PlayerRecordingStartedAt = os.clock(); State.PlayerRecording = true; State.PlayerRecordingConnections = {}
     local function stamp() return os.clock() - State.PlayerRecordingStartedAt end
-    local function push(a)
-        if not State.PlayerRecording then return end
-        a.Wave = a.Wave or getWave()
-        a.RecordedAt = stamp()
-        table.insert(State.PlayerActions, a)
-    end
+    local function push(a) if not State.PlayerRecording then return end; a.Wave = a.Wave or getWave(); a.RecordedAt = stamp(); table.insert(State.PlayerActions, a) end
 
     addConn(State.PlayerRecordingConnections, TowerDataFolder.ChildAdded:Connect(function(t)
         task.spawn(function()
             if not waitUntil(function() return own(t) and t:GetAttribute("ID") ~= nil end, 5, 0.05) then return end
             if not State.PlayerRecording then return end
-
             local placeHandle = "P" .. (#State.PlayerActions + 1)
             local cf = placeCF(t)
-            if cf then
-                local sell = tonumber(t:GetAttribute("SellPrice")) or 0
-                push({ Type = "Place", Handle = placeHandle, Unit = tostring(t:GetAttribute("ID")),
-                    CFrame = cframeToArray(cf), EstimatedCost = sell * 2 })
-            end
-
-            local m = {
-                Handle = placeHandle,
-                Level = tonumber(t:GetAttribute("Upgrade")) or 0,
-                Sell = tonumber(t:GetAttribute("SellPrice")) or 0,
-                PendCost = nil,
-                TargetMode = t:GetAttribute("TargetMode"),
-                LastUp = -math.huge,
-                AbilityMarkers = {},
-                ClockBoost = t:GetAttribute("ClockBoost"),
-            }
-            for a, v in pairs(t:GetAttributes()) do
-                if tostring(a):match("^ATTACK") then m.AbilityMarkers[a] = v end
-            end
-
+            if cf then local sell = tonumber(t:GetAttribute("SellPrice")) or 0; push({ Type = "Place", Handle = placeHandle, Unit = tostring(t:GetAttribute("ID")), CFrame = cframeToArray(cf), EstimatedCost = sell * 2 }) end
+            local m = { Handle = placeHandle, Level = tonumber(t:GetAttribute("Upgrade")) or 0, Sell = tonumber(t:GetAttribute("SellPrice")) or 0, PendCost = nil, TargetMode = t:GetAttribute("TargetMode"), LastUp = -math.huge, AbilityMarkers = {}, ClockBoost = t:GetAttribute("ClockBoost") }
+            for a, v in pairs(t:GetAttributes()) do if tostring(a):match("^ATTACK") then m.AbilityMarkers[a] = v end end
             local rmConn
-            local up = t:GetAttributeChangedSignal("SellPrice"):Connect(function()
-                local np = tonumber(t:GetAttribute("SellPrice")) or m.Sell
-                if np > m.Sell then
-                    m.PendCost = math.max(0, (np - m.Sell) * 2)
-                    m.LastUp = os.clock()
-                end
-                m.Sell = np
-            end)
-            local lv = t:GetAttributeChangedSignal("Upgrade"):Connect(function()
-                if not State.PlayerRecording then return end
-                local nl = tonumber(t:GetAttribute("Upgrade")) or m.Level
-                if nl > m.Level then
-                    push({ Type = "Upgrade", Handle = m.Handle, Unit = tostring(t:GetAttribute("ID")),
-                        FromLevel = m.Level, ToLevel = nl, EstimatedCost = m.PendCost or 0 })
-                end
-                m.Level = nl
-                m.PendCost = nil
-            end)
-            local tg = t:GetAttributeChangedSignal("TargetMode"):Connect(function()
-                if not State.PlayerRecording then return end
-                local nm = t:GetAttribute("TargetMode")
-                if nm and nm ~= m.TargetMode and not badTarget(m.TargetMode) then
-                    push({ Type = "Target", Handle = m.Handle, Mode = nm })
-                end
-                m.TargetMode = nm
-            end)
-            local bs = t:GetAttributeChangedSignal("ClockBoost"):Connect(function()
-                if not State.PlayerRecording then return end
-                local ns = t:GetAttribute("ClockBoost")
-                if ns and tostring(ns) ~= "" and tostring(ns) ~= "0"
-                    and tostring(ns) ~= tostring(m.ClockBoost) then
-                    local src = TowerDataFolder:FindFirstChild(tostring(ns))
-                    push({ Type = "BoostLink",
-                        SourceUnit = src and tostring(src:GetAttribute("ID")) or tostring(ns),
-                        TargetUnit = tostring(t:GetAttribute("ID")) })
-                end
-                m.ClockBoost = ns
-            end)
-            local ab = t.AttributeChanged:Connect(function(attr)
-                if not State.PlayerRecording or not tostring(attr):match("^ATTACK") then return end
-                local prev = m.AbilityMarkers[attr]
-                local val = t:GetAttribute(attr)
-                m.AbilityMarkers[attr] = val
-                if prev == val then return end
-                local idx = tonumber(tostring(attr):match("(%d+)$")) or 1
-                local attrId = t:GetAttribute("ID")
-                push({ Type = "Ability", Handle = m.Handle,
-                    TowerId = tostring(t.Name),
-                    Unit = attrId and tostring(attrId) or tostring(t:GetAttribute("ID")),
-                    AbilityIndex = idx })
-            end)
-            rmConn = TowerDataFolder.ChildRemoved:Connect(function(c)
-                if c ~= t or not State.PlayerRecording then return end
-                push({ Type = "Sell", Handle = m.Handle, Unit = tostring(t:GetAttribute("ID")) })
-                for _, conn in ipairs({ up, lv, tg, bs, ab, rmConn }) do
-                    pcall(function() conn:Disconnect() end)
-                end
-            end)
+            local up = t:GetAttributeChangedSignal("SellPrice"):Connect(function() local np = tonumber(t:GetAttribute("SellPrice")) or m.Sell; if np > m.Sell then m.PendCost = math.max(0, (np - m.Sell) * 2); m.LastUp = os.clock() end; m.Sell = np end)
+            local lv = t:GetAttributeChangedSignal("Upgrade"):Connect(function() if not State.PlayerRecording then return end; local nl = tonumber(t:GetAttribute("Upgrade")) or m.Level; if nl > m.Level then push({ Type = "Upgrade", Handle = m.Handle, Unit = tostring(t:GetAttribute("ID")), FromLevel = m.Level, ToLevel = nl, EstimatedCost = m.PendCost or 0 }) end; m.Level = nl; m.PendCost = nil end)
+            local tg = t:GetAttributeChangedSignal("TargetMode"):Connect(function() if not State.PlayerRecording then return end; local nm = t:GetAttribute("TargetMode"); if nm and nm ~= m.TargetMode and not badTarget(m.TargetMode) then push({ Type = "Target", Handle = m.Handle, Mode = nm }) end; m.TargetMode = nm end)
+            local bs = t:GetAttributeChangedSignal("ClockBoost"):Connect(function() if not State.PlayerRecording then return end; local ns = t:GetAttribute("ClockBoost"); if ns and tostring(ns) ~= "" and tostring(ns) ~= "0" and tostring(ns) ~= tostring(m.ClockBoost) then local src = TowerDataFolder:FindFirstChild(tostring(ns)); push({ Type = "BoostLink", SourceUnit = src and tostring(src:GetAttribute("ID")) or tostring(ns), TargetUnit = tostring(t:GetAttribute("ID")) }) end; m.ClockBoost = ns end)
+            local ab = t.AttributeChanged:Connect(function(attr) if not State.PlayerRecording or not tostring(attr):match("^ATTACK") then return end; local prev = m.AbilityMarkers[attr]; local val = t:GetAttribute(attr); m.AbilityMarkers[attr] = val; if prev == val then return end; local idx = tonumber(tostring(attr):match("(%d+)$")) or 1; local attrId = t:GetAttribute("ID"); push({ Type = "Ability", Handle = m.Handle, TowerId = tostring(t.Name), Unit = attrId and tostring(attrId) or tostring(t:GetAttribute("ID")), AbilityIndex = idx }) end)
+            rmConn = TowerDataFolder.ChildRemoved:Connect(function(c) if c ~= t or not State.PlayerRecording then return end; push({ Type = "Sell", Handle = m.Handle, Unit = tostring(t:GetAttribute("ID")) }); for _, conn in ipairs({ up, lv, tg, bs, ab, rmConn }) do pcall(function() conn:Disconnect() end) end end)
             addConn(State.PlayerRecordingConnections, rmConn)
         end)
     end))
 
     if Remotes.Speed then
-        addConn(State.PlayerRecordingConnections, Remotes.Speed.OnClientEvent:Connect(function(sp)
-            if not State.PlayerRecording then return end
-            push({ Type = "Speed", Speed = tonumber(sp) or 1 })
-        end))
+        addConn(State.PlayerRecordingConnections, Remotes.Speed.OnClientEvent:Connect(function(sp) if not State.PlayerRecording then return end; push({ Type = "Speed", Speed = tonumber(sp) or 1 }) end))
     end
 
     local gui = getGui()
     if gui then
-        local function watchSkip(o)
-            if not o:IsA("GuiButton") then return end
-            if not tostring(o.Name):lower():find("skip") then return end
-            addConn(State.PlayerRecordingConnections, o.MouseButton1Click:Connect(function()
-                if not State.PlayerRecording then return end
-                push({ Type = "Skip" })
-            end))
-        end
+        local function watchSkip(o) if not o:IsA("GuiButton") then return end; if not tostring(o.Name):lower():find("skip") then return end; addConn(State.PlayerRecordingConnections, o.MouseButton1Click:Connect(function() if not State.PlayerRecording then return end; push({ Type = "Skip" }) end)) end
         for _, o in ipairs(gui:GetDescendants()) do watchSkip(o) end
         addConn(State.PlayerRecordingConnections, gui.DescendantAdded:Connect(watchSkip))
     end
@@ -1388,16 +1062,11 @@ end
 local function stopPlayerRec(save)
     if not State.PlayerRecording then return false, "not recording" end
     State.PlayerRecording = false
-    for _, c in ipairs(State.PlayerRecordingConnections or {}) do
-        pcall(function() c:Disconnect() end)
-    end
+    for _, c in ipairs(State.PlayerRecordingConnections or {}) do pcall(function() c:Disconnect() end) end
     State.PlayerRecordingConnections = {}
     if save and HAS_FS then
         local payload = { Version = 2, Name = State.PlayerRecordingProfileName, Actions = State.PlayerActions }
-        pcall(function()
-            writefile(playerProfilePath(State.PlayerRecordingProfileName),
-                HttpService:JSONEncode(payload))
-        end)
+        pcall(function() writefile(playerProfilePath(State.PlayerRecordingProfileName), HttpService:JSONEncode(payload)) end)
     end
     return true
 end
@@ -1411,22 +1080,14 @@ end
 local Config = readConfig()
 
 local function applyConfig()
-    State.AutoReplay = Config.AutoReplay == true
-    State.AutoReady = Config.AutoReady == true
-    State.AutoSkip = Config.AutoSkip == true
-    State.AutoSpeed = Config.AutoSpeed == true
+    State.AutoReplay = Config.AutoReplay == true; State.AutoReady = Config.AutoReady == true; State.AutoSkip = Config.AutoSkip == true; State.AutoSpeed = Config.AutoSpeed == true
     State.SpeedScaleDelay = math.clamp(tonumber(Config.SpeedScaleDelay) or 1, 0.5, 10)
-    State.MovingAround = Config.MovingAround == true
-    State.AutoJoinMap = Config.AutoJoinMap == true
-    State.LobbyMode = tostring(Config.LobbyMode or "Story")
-    State.LobbyChapter = tostring(Config.LobbyChapter or "Chapter 1")
+    State.MovingAround = Config.MovingAround == true; State.AutoJoinMap = Config.AutoJoinMap == true
+    State.LobbyMode = tostring(Config.LobbyMode or "Story"); State.LobbyChapter = tostring(Config.LobbyChapter or "Chapter 1")
     if type(Config.LobbyModifiers) == "table" then
         for k, v in pairs(Config.LobbyModifiers) do
-            if type(k) == "string" and v == true then
-                State.LobbyModifiers[k] = true
-            elseif type(k) == "number" and type(v) == "string" then
-                State.LobbyModifiers[v] = true
-            end
+            if type(k) == "string" and v == true then State.LobbyModifiers[k] = true
+            elseif type(k) == "number" and type(v) == "string" then State.LobbyModifiers[v] = true end
         end
     end
     State.AutoBackLobby = Config.AutoBackLobby == true
@@ -1434,13 +1095,10 @@ local function applyConfig()
     State.MatchesCompleted = math.max(0, math.floor(tonumber(Config.MatchesCompleted) or 0))
     State.LastCountedJobId = tostring(Config.LastCountedJobId or "")
     State.PendingLobbyReturn = Config.PendingLobbyReturn == true
-    State.WebhookEnabled = Config.WebhookEnabled == true
-    State.WebhookURL = tostring(Config.WebhookURL or "")
-    State.WebhookMatchEnd = Config.WebhookMatchEnd ~= false
-    State.PlaybackEnabled = Config.PlaybackEnabled == true
+    State.WebhookEnabled = Config.WebhookEnabled == true; State.WebhookURL = tostring(Config.WebhookURL or "")
+    State.WebhookMatchEnd = Config.WebhookMatchEnd ~= false; State.PlaybackEnabled = Config.PlaybackEnabled == true
     State.Speed = math.clamp(tonumber(Config.Speed) or 1, 1, 6)
-    State.PlaybackMode = table.find({ "Hybrid", "Time", "Money" }, Config.PlaybackMode)
-        and Config.PlaybackMode or "Hybrid"
+    State.PlaybackMode = table.find({ "Hybrid", "Time", "Money" }, Config.PlaybackMode) and Config.PlaybackMode or "Hybrid"
     State.ProfileName = sanitize(Config.SelectedProfile or "")
 end
 
@@ -1450,19 +1108,13 @@ local saveQueued = false
 local function saveConfig()
     if not HAS_FS then return end
     local p = {
-        AutoReplay = State.AutoReplay, AutoReady = State.AutoReady,
-        AutoSkip = State.AutoSkip, AutoSpeed = State.AutoSpeed,
-        SpeedScaleDelay = State.SpeedScaleDelay,
-        MovingAround = State.MovingAround, AutoJoinMap = State.AutoJoinMap,
-        LobbyMode = State.LobbyMode, LobbyChapter = State.LobbyChapter,
-        LobbyModifiers = State.LobbyModifiers,
-        AutoBackLobby = State.AutoBackLobby,
-        MatchesBeforeLobby = State.MatchesBeforeLobby,
-        MatchesCompleted = State.MatchesCompleted,
-        LastCountedJobId = State.LastCountedJobId,
-        PendingLobbyReturn = State.PendingLobbyReturn,
-        WebhookEnabled = State.WebhookEnabled, WebhookURL = State.WebhookURL,
-        WebhookMatchEnd = State.WebhookMatchEnd,
+        AutoReplay = State.AutoReplay, AutoReady = State.AutoReady, AutoSkip = State.AutoSkip, AutoSpeed = State.AutoSpeed,
+        SpeedScaleDelay = State.SpeedScaleDelay, MovingAround = State.MovingAround, AutoJoinMap = State.AutoJoinMap,
+        LobbyMode = State.LobbyMode, LobbyChapter = State.LobbyChapter, LobbyModifiers = State.LobbyModifiers,
+        AutoBackLobby = State.AutoBackLobby, MatchesBeforeLobby = State.MatchesBeforeLobby,
+        MatchesCompleted = State.MatchesCompleted, LastCountedJobId = State.LastCountedJobId,
+        PendingLobbyReturn = State.PendingLobbyReturn, WebhookEnabled = State.WebhookEnabled,
+        WebhookURL = State.WebhookURL, WebhookMatchEnd = State.WebhookMatchEnd,
         PlaybackEnabled = State.PlaybackEnabled, Speed = State.Speed,
         PlaybackMode = State.PlaybackMode, SelectedProfile = State.ProfileName,
     }
@@ -1472,45 +1124,23 @@ end
 local function queueSave()
     if saveQueued then return end
     saveQueued = true
-    task.delay(0.3, function()
-        saveQueued = false
-        saveConfig()
-    end)
+    task.delay(0.3, function() saveQueued = false; saveConfig() end)
 end
 
 local ModeChapters = {
-    Story = {
-        "Chapter 1", "Chapter 1.5", "Chapter 2", "Chapter 3", "Chapter 4",
-        "Chapter 5", "Chapter 6", "Chapter 7", "Chapter 8", "Chapter 9",
-    },
-    Multiverse = {
-        "Multiverse Chapter 1", "Multiverse Chapter 2", "Multiverse Chapter 3",
-    },
-    Nightmare = {
-        "Suspicious Detections", "Rise Of The Corruption", "Spreaded Corruption",
-        "A Fight From the Past", "Land of Creation", "The Final Showdown",
-        "The Last Base", "Civil War",
-    },
+    Story = { "Chapter 1", "Chapter 1.5", "Chapter 2", "Chapter 3", "Chapter 4", "Chapter 5", "Chapter 6", "Chapter 7", "Chapter 8", "Chapter 9" },
+    Multiverse = { "Multiverse Chapter 1", "Multiverse Chapter 2", "Multiverse Chapter 3" },
+    Nightmare = { "Suspicious Detections", "Rise Of The Corruption", "Spreaded Corruption", "A Fight From the Past", "Land of Creation", "The Final Showdown", "The Last Base", "Civil War" },
     Event = { "Partner Takeover", "Skibi Trials" },
     Versus = { "Versus 1v1", "Versus 2v2", "Versus 3v3", "Versus 4v4" },
     Endless = { "Normal", "Roguelite" },
     Episodes = { "Episode 79" },
     Raid = { "WorldRaid" },
 }
-for modeName, chapters in pairs(ModeChapters) do
-    ModeChapters[modeName] = removeDuplicates(chapters)
-end
+for modeName, chapters in pairs(ModeChapters) do ModeChapters[modeName] = removeDuplicates(chapters) end
 
 local LobbyModifierIds = {
-    "LBRUN","BPXP","NormalRegen","GodlyRegen","WeakerEnemies","WayWeakerEnemies",
-    "StrongerEnemies","WayStrongerEnemies","GodlyEnemies","LessEnemies","DoubleEnemies",
-    "AcceleratingEnemies","DeceleratingEnemies","RandomSpeed","RandomHP","AllHidden",
-    "NoHidden","AllAir","NoAir","Ambushed","AggressiveFoes","AdvancedForces",
-    "Deflection","TowerNerf","TowerNerf2","ThreePlacement","TenPlacement",
-    "OnePlacement","InfinitePlacement","DoubleWaveMoney","LessWaveMoney",
-    "MoreDamageMoney","LessDamageMoney","MarketLock","BudgetOptimization",
-    "MassiveTowers","PositionShift","SmallWar","ToiletSpawner","RandomLoadout",
-    "Freeze","InfiniteHP","InfiniteMoney","SandboxMap",
+    "LBRUN","BPXP","NormalRegen","GodlyRegen","WeakerEnemies","WayWeakerEnemies","StrongerEnemies","WayStrongerEnemies","GodlyEnemies","LessEnemies","DoubleEnemies","AcceleratingEnemies","DeceleratingEnemies","RandomSpeed","RandomHP","AllHidden","NoHidden","AllAir","NoAir","Ambushed","AggressiveFoes","AdvancedForces","Deflection","TowerNerf","TowerNerf2","ThreePlacement","TenPlacement","OnePlacement","InfinitePlacement","DoubleWaveMoney","LessWaveMoney","MoreDamageMoney","LessDamageMoney","MarketLock","BudgetOptimization","MassiveTowers","PositionShift","SmallWar","ToiletSpawner","RandomLoadout","Freeze","InfiniteHP","InfiniteMoney","SandboxMap",
 }
 
 local ModSet, DispToId, IdToDisp, ModList = {}, {}, {}, {}
@@ -1521,10 +1151,8 @@ local function humanizeMod(id)
     return id:gsub("(%l)(%u)", "%1 %2"):gsub("(%a)(%d)", "%1 %2"):gsub("(%d)(%a)", "%1 %2")
 end
 for _, id in ipairs(LobbyModifierIds) do
-    ModSet[id] = true
-    local d = string.format("%s [%s]", humanizeMod(id), id)
-    DispToId[d] = id; IdToDisp[id] = d
-    ModList[#ModList + 1] = d
+    ModSet[id] = true; local d = string.format("%s [%s]", humanizeMod(id), id)
+    DispToId[d] = id; IdToDisp[id] = d; ModList[#ModList + 1] = d
 end
 
 local function normalizeMods(v)
@@ -1543,22 +1171,16 @@ State.LobbyModifiers = normalizeMods(State.LobbyModifiers)
 
 local function modsForDropdown(sel)
     local v = {}
-    for _, id in ipairs(LobbyModifierIds) do
-        if sel[id] == true then v[#v + 1] = IdToDisp[id] end
-    end
+    for _, id in ipairs(LobbyModifierIds) do if sel[id] == true then v[#v + 1] = IdToDisp[id] end end
     return v
 end
 
 local function applyMods()
     local sel = {}
-    for _, id in ipairs(LobbyModifierIds) do
-        if State.LobbyModifiers[id] == true then sel[#sel + 1] = id end
-    end
+    for _, id in ipairs(LobbyModifierIds) do if State.LobbyModifiers[id] == true then sel[#sel + 1] = id end end
     if #sel == 0 then return true end
     refreshObjects()
-    if not Remotes.ModifierState or not Remotes.ModifierState:IsA("RemoteEvent") then
-        return false, "ModifierState missing"
-    end
+    if not Remotes.ModifierState or not Remotes.ModifierState:IsA("RemoteEvent") then return false, "ModifierState missing" end
     for _, id in ipairs(sel) do
         local ok, msg = pcall(function() Remotes.ModifierState:FireServer(id, true) end)
         if not ok then return false, id .. ": " .. tostring(msg) end
@@ -1570,25 +1192,17 @@ end
 local function chaptersFor(mode)
     if mode ~= "All" then return removeDuplicates(ModeChapters[mode] or {}) end
     local all = {}
-    for _, chs in pairs(ModeChapters) do
-        for i = 1, #chs do all[#all + 1] = chs[i] end
-    end
+    for _, chs in pairs(ModeChapters) do for i = 1, #chs do all[#all + 1] = chs[i] end end
     return removeDuplicates(all)
 end
 
-if not ModeChapters[State.LobbyMode] and State.LobbyMode ~= "All" then
-    State.LobbyMode = "Story"
-end
+if not ModeChapters[State.LobbyMode] and State.LobbyMode ~= "All" then State.LobbyMode = "Story" end
 local initChapters = chaptersFor(State.LobbyMode)
-if not table.find(initChapters, State.LobbyChapter) then
-    State.LobbyChapter = initChapters[1] or "Chapter 1"
-end
+if not table.find(initChapters, State.LobbyChapter) then State.LobbyChapter = initChapters[1] or "Chapter 1" end
 
 local WindUI
 do
-    local ok, r = pcall(function()
-        return loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"))()
-    end)
+    local ok, r = pcall(function() return loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"))() end)
     if not ok then return warn("[Hub] WindUI load failed: " .. tostring(r)) end
     WindUI = r
 end
@@ -1596,13 +1210,7 @@ end
 local Window
 do
     local ok, r = pcall(function()
-        return WindUI:CreateWindow({
-            Title = "Skibidi Defense Hub", Author = "Hub",
-            Folder = "SkibidiDefenseHub", Icon = "clapperboard", Theme = "Dark",
-            Size = UDim2.fromOffset(620, 480), Transparent = true, HideSearchBar = true,
-            NewElements = true, ToggleKey = Enum.KeyCode.RightShift,
-            OpenButton = { Title = "Skibidi Defense Hub", Enabled = true, Draggable = true, OnlyMobile = false },
-        })
+        return WindUI:CreateWindow({ Title = "Skibidi Defense Hub", Author = "Hub", Folder = "SkibidiDefenseHub", Icon = "clapperboard", Theme = "Dark", Size = UDim2.fromOffset(620, 480), Transparent = true, HideSearchBar = true, NewElements = true, ToggleKey = Enum.KeyCode.RightShift, OpenButton = { Title = "Skibidi Defense Hub", Enabled = true, Draggable = true, OnlyMobile = false } })
     end)
     if not ok then return warn("[Hub] Window creation failed: " .. tostring(r)) end
     Window = r
@@ -1611,22 +1219,12 @@ end
 pcall(function() Window:SetToggleKey(Enum.KeyCode.RightShift) end)
 pcall(function() Window:SetTogleKey(Enum.KeyCode.RightShift) end)
 
-local function notify(t, c)
-    pcall(function() WindUI:Notify({ Title = t, Content = c, Duration = 4, Icon = "bell" }) end)
-end
+local function notify(t, c) pcall(function() WindUI:Notify({ Title = t, Content = c, Duration = 4, Icon = "bell" }) end) end
 
 local function wrapParagraph(el)
     local w = {}
-    function w:SetTitle(v)
-        pcall(function()
-            if el.SetTitle then el:SetTitle(v) else el:Set({ Title = v }) end
-        end)
-    end
-    function w:SetDesc(v)
-        pcall(function()
-            if el.SetDesc then el:SetDesc(v) else el:Set({ Desc = v }) end
-        end)
-    end
+    function w:SetTitle(v) pcall(function() if el.SetTitle then el:SetTitle(v) else el:Set({ Title = v }) end end) end
+    function w:SetDesc(v) pcall(function() if el.SetDesc then el:SetDesc(v) else el:Set({ Desc = v }) end end) end
     return w
 end
 
@@ -1647,22 +1245,14 @@ local WebhookTab = safeTab(Window, { Title = "Webhook", Icon = "webhook" })
 
 local Gui = {}
 
-local function setStatus(title, detail)
-    if Gui.Status then
-        Gui.Status:SetTitle("State: " .. tostring(title))
-        Gui.Status:SetDesc(detail or "")
-    end
-end
+local function setStatus(title, detail) if Gui.Status then Gui.Status:SetTitle("State: " .. tostring(title)); Gui.Status:SetDesc(detail or "") end end
 
 local function refreshActionList()
     if not Gui.ActionSummary then return end
-    local lines = {}
-    local first = math.max(1, #State.Actions - 7)
+    local lines = {}; local first = math.max(1, #State.Actions - 7)
     for i = first, #State.Actions do
-        local a = State.Actions[i]
-        local subj = a.Unit or a.Handle or ""
-        if a.Type == "BoostLink" then
-            subj = string.format("%s > %s", a.SourceHandle or "?", a.TargetHandle or "?")
+        local a = State.Actions[i]; local subj = a.Unit or a.Handle or ""
+        if a.Type == "BoostLink" then subj = string.format("%s > %s", a.SourceHandle or "?", a.TargetHandle or "?")
         elseif a.Type == "Ability" then subj = "Ability #" .. tostring(a.AbilityIndex or 1)
         elseif a.Type == "Target" then subj = tostring(a.Mode or "?") end
         lines[#lines + 1] = string.format("%02d | W%s | %s | %s", i, a.Wave or 0, a.Type or "?", subj)
@@ -1672,128 +1262,45 @@ local function refreshActionList()
 end
 
 safeSection(LobbyTab, { Title = "Lobby Automation", Desc = "Ready and replay" })
-
 local chapterDropdown
-safeDropdown(LobbyTab, {
-    Title = "Mode",
-    Values = { "Story", "Multiverse", "Nightmare", "Event", "Versus", "Endless", "Episodes", "Raid", "All" },
-    Value = State.LobbyMode, Multi = false,
+safeDropdown(LobbyTab, { Title = "Mode", Values = { "Story", "Multiverse", "Nightmare", "Event", "Versus", "Endless", "Episodes", "Raid", "All" }, Value = State.LobbyMode, Multi = false,
     Callback = function(v)
-        State.LobbyMode = v
-        local chs = chaptersFor(v)
+        State.LobbyMode = v; local chs = chaptersFor(v)
         if not table.find(chs, State.LobbyChapter) then State.LobbyChapter = chs[1] or "" end
-        if chapterDropdown then
-            pcall(function() chapterDropdown:Refresh(chs) end)
-            pcall(function() chapterDropdown:Select(State.LobbyChapter) end)
-        end
-        State.JoinRequested = false
-        queueSave()
-    end,
-})
-
-chapterDropdown = safeDropdown(LobbyTab, {
-    Title = "Chapter", Values = initChapters, Value = State.LobbyChapter, Multi = false,
-    Callback = function(v) State.LobbyChapter = v; State.JoinRequested = false; queueSave() end,
-})
-
-safeToggle(LobbyTab, {
-    Title = "Auto Join Map", Value = State.AutoJoinMap,
-    Callback = function(v) State.AutoJoinMap = v == true; State.JoinRequested = false; queueSave() end,
-})
-
-safeDropdown(LobbyTab, {
-    Title = "Modifiers", Values = ModList,
-    Value = modsForDropdown(State.LobbyModifiers),
-    Multi = true, AllowNone = true, SearchBarEnabled = true,
-    Callback = function(v) State.LobbyModifiers = normalizeMods(v); State.JoinRequested = false; queueSave() end,
-})
+        if chapterDropdown then pcall(function() chapterDropdown:Refresh(chs) end); pcall(function() chapterDropdown:Select(State.LobbyChapter) end) end
+        State.JoinRequested = false; queueSave()
+    end })
+chapterDropdown = safeDropdown(LobbyTab, { Title = "Chapter", Values = initChapters, Value = State.LobbyChapter, Multi = false, Callback = function(v) State.LobbyChapter = v; State.JoinRequested = false; queueSave() end })
+safeToggle(LobbyTab, { Title = "Auto Join Map", Value = State.AutoJoinMap, Callback = function(v) State.AutoJoinMap = v == true; State.JoinRequested = false; queueSave() end })
+safeDropdown(LobbyTab, { Title = "Modifiers", Values = ModList, Value = modsForDropdown(State.LobbyModifiers), Multi = true, AllowNone = true, SearchBarEnabled = true, Callback = function(v) State.LobbyModifiers = normalizeMods(v); State.JoinRequested = false; queueSave() end })
 
 safeSection(LobbyTab, { Title = "Match Cycle", Desc = "Persisted across teleports" })
 local matchCounter = wrapParagraph(safeParagraph(LobbyTab, { Title = "Match Counter", Desc = "..." }))
-local function updateCounter()
-    if not matchCounter then return end
-    matchCounter:SetDesc(string.format("%d/%d | %s",
-        State.MatchesCompleted, State.MatchesBeforeLobby,
-        State.PendingLobbyReturn and "returning" or "running"))
-end
-Gui.UpdateMatchCounter = updateCounter
-updateCounter()
+local function updateCounter() if not matchCounter then return end; matchCounter:SetDesc(string.format("%d/%d | %s", State.MatchesCompleted, State.MatchesBeforeLobby, State.PendingLobbyReturn and "returning" or "running")) end
+Gui.UpdateMatchCounter = updateCounter; updateCounter()
 
-safeToggle(LobbyTab, {
-    Title = "Auto Back Lobby After X Matches", Value = State.AutoBackLobby,
-    Callback = function(v) State.AutoBackLobby = v == true; queueSave(); updateCounter() end,
-})
-
-safeInput(LobbyTab, {
-    Title = "Matches Before Lobby", Placeholder = "5",
-    Value = tostring(State.MatchesBeforeLobby),
-    Callback = function(v)
-        local n = tonumber(tostring(v):match("%d+"))
-        if n then
-            State.MatchesBeforeLobby = math.max(1, math.floor(n))
-            queueSave(); updateCounter()
-        end
-    end,
-})
-
-safeButton(LobbyTab, {
-    Title = "Reset Match Counter", Icon = "rotate-ccw",
-    Callback = function()
-        State.MatchesCompleted = 0; State.LastCountedJobId = ""
-        State.PendingLobbyReturn = false; queueSave(); updateCounter()
-    end,
-})
-
-safeToggle(LobbyTab, {
-    Title = "Auto Replay", Value = State.AutoReplay,
-    Callback = function(v) State.AutoReplay = v == true; queueSave() end,
-})
-
-safeToggle(LobbyTab, {
-    Title = "Auto Ready Up", Value = State.AutoReady,
-    Callback = function(v)
-        State.AutoReady = v == true
-        if State.AutoReady and Remotes.Ready then
-            pcall(function() Remotes.Ready:FireServer(true) end)
-        end
-        queueSave()
-    end,
-})
+safeToggle(LobbyTab, { Title = "Auto Back Lobby After X Matches", Value = State.AutoBackLobby, Callback = function(v) State.AutoBackLobby = v == true; queueSave(); updateCounter() end })
+safeInput(LobbyTab, { Title = "Matches Before Lobby", Placeholder = "5", Value = tostring(State.MatchesBeforeLobby), Callback = function(v) local n = tonumber(tostring(v):match("%d+")); if n then State.MatchesBeforeLobby = math.max(1, math.floor(n)); queueSave(); updateCounter() end end })
+safeButton(LobbyTab, { Title = "Reset Match Counter", Icon = "rotate-ccw", Callback = function() State.MatchesCompleted = 0; State.LastCountedJobId = ""; State.PendingLobbyReturn = false; queueSave(); updateCounter() end })
+safeToggle(LobbyTab, { Title = "Auto Replay", Value = State.AutoReplay, Callback = function(v) State.AutoReplay = v == true; queueSave() end })
+safeToggle(LobbyTab, { Title = "Auto Ready Up", Value = State.AutoReady, Callback = function(v) State.AutoReady = v == true; if State.AutoReady and Remotes.Ready then pcall(function() Remotes.Ready:FireServer(true) end) end; queueSave() end })
 
 task.spawn(function()
     while State.Running do
-        if game.PlaceId == LOBBY_PLACE_ID and State.AutoJoinMap
-            and not State.JoinRequested and State.LobbyChapter ~= "" then
+        if game.PlaceId == LOBBY_PLACE_ID and State.AutoJoinMap and not State.JoinRequested and State.LobbyChapter ~= "" then
             refreshObjects()
             if Remotes.CreateServer then
                 State.JoinRequested = true
                 task.spawn(function()
                     local ok, res = pcall(function() return Remotes.CreateServer:InvokeServer(State.LobbyChapter) end)
-                    if not ok then
-                        State.JoinRequested = false
-                        notify("Auto Join", tostring(res)); return
-                    end
+                    if not ok then State.JoinRequested = false; notify("Auto Join", tostring(res)); return end
                     local modOk, modErr = applyMods()
-                    if not modOk then
-                        State.JoinRequested = false
-                        notify("Modifiers failed", tostring(modErr)); return
-                    end
+                    if not modOk then State.JoinRequested = false; notify("Modifiers failed", tostring(modErr)); return end
                     local startR
-                    for _ = 1, 20 do
-                        refreshObjects()
-                        startR = Remotes.StartServer
-                        if startR then break end
-                        humanDelay(0.3, 0.1)
-                    end
-                    if not startR then
-                        State.JoinRequested = false
-                        notify("Auto Join", "Events.start not found"); return
-                    end
+                    for _ = 1, 20 do refreshObjects(); startR = Remotes.StartServer; if startR then break end; humanDelay(0.3, 0.1) end
+                    if not startR then State.JoinRequested = false; notify("Auto Join", "Events.start not found"); return end
                     local sok, serr = pcall(function() startR:FireServer(false) end)
-                    if not sok then
-                        State.JoinRequested = false
-                        notify("Auto Join failed", tostring(serr))
-                    end
+                    if not sok then State.JoinRequested = false; notify("Auto Join failed", tostring(serr)) end
                 end)
             end
         end
@@ -1802,27 +1309,10 @@ task.spawn(function()
 end)
 
 safeSection(WebhookTab, { Title = "Discord Webhook", Desc = "Match notifications" })
-safeInput(WebhookTab, {
-    Title = "Webhook URL", Placeholder = "https://discord.com/api/webhooks/...",
-    Value = State.WebhookURL,
-    Callback = function(v) State.WebhookURL = tostring(v or ""); queueSave() end,
-})
-safeToggle(WebhookTab, {
-    Title = "Enable Webhook", Value = State.WebhookEnabled,
-    Callback = function(v) State.WebhookEnabled = v == true; queueSave() end,
-})
-safeToggle(WebhookTab, {
-    Title = "Notify On Match End", Value = State.WebhookMatchEnd,
-    Callback = function(v) State.WebhookMatchEnd = v == true; queueSave() end,
-})
-safeButton(WebhookTab, {
-    Title = "Send Test Webhook", Icon = "send",
-    Callback = function()
-        local ok, msg = sendWebhook("Webhook Test", "Hub webhook is working.", 5763719)
-        if ok then notify("Webhook", "Test sent: " .. tostring(msg))
-        else notify("Webhook failed", tostring(msg)) end
-    end,
-})
+safeInput(WebhookTab, { Title = "Webhook URL", Placeholder = "https://discord.com/api/webhooks/...", Value = State.WebhookURL, Callback = function(v) State.WebhookURL = tostring(v or ""); queueSave() end })
+safeToggle(WebhookTab, { Title = "Enable Webhook", Value = State.WebhookEnabled, Callback = function(v) State.WebhookEnabled = v == true; queueSave() end })
+safeToggle(WebhookTab, { Title = "Notify On Match End", Value = State.WebhookMatchEnd, Callback = function(v) State.WebhookMatchEnd = v == true; queueSave() end })
+safeButton(WebhookTab, { Title = "Send Test Webhook", Icon = "send", Callback = function() local ok, msg = sendWebhook("Webhook Test", "Hub webhook is working.", 5763719); if ok then notify("Webhook", "Test sent: " .. tostring(msg)) else notify("Webhook failed", tostring(msg)) end end })
 
 safeSection(MacrosTab, { Title = "Macro State", Desc = "Recorder + playback" })
 Gui.Status = wrapParagraph(safeParagraph(MacrosTab, { Title = "State: Idle", Desc = "Waiting" }))
@@ -1830,10 +1320,7 @@ Gui.Runtime = wrapParagraph(safeParagraph(MacrosTab, { Title = "Live match", Des
 Gui.ActionSummary = wrapParagraph(safeParagraph(MacrosTab, { Title = "Recorded actions: 0", Desc = "None" }))
 
 local newProfileName = Config.NewProfileName or ""
-safeInput(MacrosTab, {
-    Title = "Create Macro", Placeholder = "example: map1_solo", Value = newProfileName,
-    Callback = function(v) newProfileName = sanitize(v); queueSave() end,
-})
+safeInput(MacrosTab, { Title = "Create Macro", Placeholder = "example: map1_solo", Value = newProfileName, Callback = function(v) newProfileName = sanitize(v); queueSave() end })
 
 local profileValues = listProfiles()
 if #profileValues == 0 then profileValues = { "(none)" } end
@@ -1841,12 +1328,8 @@ local selectedDefault = State.ProfileName ~= "" and State.ProfileName or profile
 local profileDropdown
 
 local function refreshProfiles(sel)
-    local v = listProfiles()
-    if #v == 0 then v = { "(none)" } end
-    if profileDropdown then
-        pcall(function() profileDropdown:Refresh(v) end)
-        if sel and sel ~= "" then pcall(function() profileDropdown:Select(sel) end) end
-    end
+    local v = listProfiles(); if #v == 0 then v = { "(none)" } end
+    if profileDropdown then pcall(function() profileDropdown:Refresh(v) end); if sel and sel ~= "" then pcall(function() profileDropdown:Select(sel) end) end end
 end
 Gui.RefreshProfiles = refreshProfiles
 
@@ -1857,543 +1340,224 @@ local function startEnabledPlayback()
 end
 Gui.StartEnabledPlayback = startEnabledPlayback
 
-safeButton(MacrosTab, {
-    Title = "Create New Macro", Icon = "file-plus",
-    Callback = function()
-        local n = sanitize(newProfileName)
-        if n == "" then notify("Create", "Enter name"); return end
-        if HAS_FS and isfile(profilePath(n)) then notify("Create", "Already exists"); return end
-        local pa, pn = State.Actions, State.ProfileName
-        State.Actions, State.ProfileName = {}, n
-        local ok, msg = saveProfile(n)
-        if not ok then
-            State.Actions, State.ProfileName = pa, pn
-            notify("Create failed", tostring(msg)); return
-        end
-        refreshProfiles(n); refreshActionList()
-        setStatus("Created", n .. " ready"); queueSave()
-    end,
-})
+safeButton(MacrosTab, { Title = "Create New Macro", Icon = "file-plus", Callback = function()
+    local n = sanitize(newProfileName); if n == "" then notify("Create", "Enter name"); return end
+    if HAS_FS and isfile(profilePath(n)) then notify("Create", "Already exists"); return end
+    local pa, pn = State.Actions, State.ProfileName; State.Actions, State.ProfileName = {}, n
+    local ok, msg = saveProfile(n); if not ok then State.Actions, State.ProfileName = pa, pn; notify("Create failed", tostring(msg)); return end
+    refreshProfiles(n); refreshActionList(); setStatus("Created", n .. " ready"); queueSave()
+end })
 
-profileDropdown = safeDropdown(MacrosTab, {
-    Title = "Select Macro", Values = profileValues, Value = selectedDefault, Multi = false,
-    Callback = function(v)
-        if v == "(none)" then return end
-        local ok, msg = loadProfile(v)
-        if ok then
-            refreshActionList()
-            setStatus("Loaded", string.format("%s (%d)", State.ProfileName, #State.Actions))
-            queueSave(); task.defer(startEnabledPlayback)
-        else
-            setStatus("Load failed", tostring(msg))
-        end
-    end,
-})
+profileDropdown = safeDropdown(MacrosTab, { Title = "Select Macro", Values = profileValues, Value = selectedDefault, Multi = false, Callback = function(v)
+    if v == "(none)" then return end
+    local ok, msg = loadProfile(v)
+    if ok then refreshActionList(); setStatus("Loaded", string.format("%s (%d)", State.ProfileName, #State.Actions)); queueSave(); task.defer(startEnabledPlayback)
+    else setStatus("Load failed", tostring(msg)) end
+end })
 
-safeButton(MacrosTab, {
-    Title = "Export Macro (Copy)", Icon = "clipboard",
-    Callback = function()
-        if #State.Actions == 0 then notify("Export", "No actions"); return end
-        local p = { Version = 4, Name = State.ProfileName, Actions = State.Actions }
-        pcall(function() setclipboard(HttpService:JSONEncode(p)) end)
-        notify("Export", "Copied")
-    end,
-})
-
-safeButton(MacrosTab, {
-    Title = "Import Macro (Paste)", Icon = "clipboard-paste",
-    Callback = function()
-        local clip = (type(getclipboard) == "function" and getclipboard()) or ""
-        if clip == "" then notify("Import", "Clipboard empty"); return end
-        local ok, dec = pcall(function() return HttpService:JSONDecode(clip) end)
-        if ok and dec and type(dec.Actions) == "table" then
-            State.Actions = dec.Actions
-            State.ProfileVersion = tonumber(dec.Version) or 4
-            State.ProfileName = sanitize(dec.Name or "Imported")
-            refreshActionList()
-            notify("Import", "OK"); queueSave()
-        else
-            notify("Import failed", "Invalid")
-        end
-    end,
-})
-
-safeButton(MacrosTab, {
-    Title = "Export Player Macro (Copy)", Icon = "user",
-    Callback = function()
-        if #State.PlayerActions == 0 then notify("Export", "None"); return end
-        local p = { Version = 2, Name = State.PlayerRecordingProfileName, Actions = State.PlayerActions }
-        pcall(function() setclipboard(HttpService:JSONEncode(p)) end)
-        notify("Export", "Copied")
-    end,
-})
-
-safeButton(MacrosTab, {
-    Title = "Import Player Macro (Paste)", Icon = "user-check",
-    Callback = function()
-        local clip = (type(getclipboard) == "function" and getclipboard()) or ""
-        if clip == "" then notify("Import", "Clipboard empty"); return end
-        local ok, dec = pcall(function() return HttpService:JSONDecode(clip) end)
-        if ok and dec and type(dec.Actions) == "table" then
-            State.PlayerActions = dec.Actions
-            State.PlayerRecordingProfileName = sanitize(dec.Name or "ImportedPlayer")
-            notify("Import", "OK")
-        else
-            notify("Import failed", "Invalid")
-        end
-    end,
-})
-
-safeDropdown(MacrosTab, {
-    Title = "Playback Mode", Values = { "Hybrid", "Time", "Money" },
-    Value = State.PlaybackMode, Multi = false,
-    Callback = function(v) State.PlaybackMode = v; queueSave() end,
-})
+safeButton(MacrosTab, { Title = "Export Macro (Copy)", Icon = "clipboard", Callback = function() if #State.Actions == 0 then notify("Export", "No actions"); return end; local p = { Version = 4, Name = State.ProfileName, Actions = State.Actions }; pcall(function() setclipboard(HttpService:JSONEncode(p)) end); notify("Export", "Copied") end })
+safeButton(MacrosTab, { Title = "Import Macro (Paste)", Icon = "clipboard-paste", Callback = function()
+    local clip = (type(getclipboard) == "function" and getclipboard()) or ""
+    if clip == "" then notify("Import", "Clipboard empty"); return end
+    local ok, dec = pcall(function() return HttpService:JSONDecode(clip) end)
+    if ok and dec and type(dec.Actions) == "table" then
+        State.Actions = dec.Actions; State.ProfileVersion = tonumber(dec.Version) or 4; State.ProfileName = sanitize(dec.Name or "Imported"); refreshActionList(); notify("Import", "OK"); queueSave()
+    else notify("Import failed", "Invalid") end
+end })
+safeButton(MacrosTab, { Title = "Export Player Macro (Copy)", Icon = "user", Callback = function() if #State.PlayerActions == 0 then notify("Export", "None"); return end; local p = { Version = 2, Name = State.PlayerRecordingProfileName, Actions = State.PlayerActions }; pcall(function() setclipboard(HttpService:JSONEncode(p)) end); notify("Export", "Copied") end })
+safeButton(MacrosTab, { Title = "Import Player Macro (Paste)", Icon = "user-check", Callback = function()
+    local clip = (type(getclipboard) == "function" and getclipboard()) or ""
+    if clip == "" then notify("Import", "Clipboard empty"); return end
+    local ok, dec = pcall(function() return HttpService:JSONDecode(clip) end)
+    if ok and dec and type(dec.Actions) == "table" then State.PlayerActions = dec.Actions; State.PlayerRecordingProfileName = sanitize(dec.Name or "ImportedPlayer"); notify("Import", "OK")
+    else notify("Import failed", "Invalid") end
+end })
+safeDropdown(MacrosTab, { Title = "Playback Mode", Values = { "Hybrid", "Time", "Money" }, Value = State.PlaybackMode, Multi = false, Callback = function(v) State.PlaybackMode = v; queueSave() end })
 
 local changingToggle = false
 local recordToggle, playbackToggle
 
-local function setWindToggle(el, v)
-    if not el then return end
-    changingToggle = true
-    pcall(function() el:Set(v) end)
-    changingToggle = false
-end
+local function setWindToggle(el, v) if not el then return end; changingToggle = true; pcall(function() el:Set(v) end); changingToggle = false end
 Gui.SetRecordToggle = function(v) setWindToggle(recordToggle, v) end
 Gui.SetPlaybackToggle = function(v) setWindToggle(playbackToggle, v) end
 
-recordToggle = safeToggle(MacrosTab, {
-    Title = "Record", Value = false,
-    Callback = function(v)
-        if changingToggle then return end
-        if v then
-            if State.PlaybackEnabled then
-                setWindToggle(playbackToggle, false)
-                State.PlaybackEnabled = false
-                queueSave()
-            end
-            if State.Playing then stopPlayback("Recording began") end
-            local n = State.ProfileName ~= "" and State.ProfileName or newProfileName
-            local ok, msg = startRecording(n)
-            if not ok then
-                setWindToggle(recordToggle, false)
-                notify("Cannot record", tostring(msg))
-            end
-        elseif State.Recording then
-            local ok, msg = StopRecording(true)
-            if ok then refreshProfiles(State.ProfileName)
-            else notify("Cannot save", tostring(msg)) end
-        end
-    end,
-})
+recordToggle = safeToggle(MacrosTab, { Title = "Record", Value = false, Callback = function(v)
+    if changingToggle then return end
+    if v then
+        if State.PlaybackEnabled then setWindToggle(playbackToggle, false); State.PlaybackEnabled = false; queueSave() end
+        if State.Playing then stopPlayback("Recording began") end
+        local n = State.ProfileName ~= "" and State.ProfileName or newProfileName
+        local ok, msg = startRecording(n); if not ok then setWindToggle(recordToggle, false); notify("Cannot record", tostring(msg)) end
+    elseif State.Recording then
+        local ok, msg = StopRecording(true); if ok then refreshProfiles(State.ProfileName) else notify("Cannot save", tostring(msg)) end
+    end
+end })
 Gui.RecordToggle = recordToggle
 
-playbackToggle = safeToggle(MacrosTab, {
-    Title = "Playback", Value = State.PlaybackEnabled,
-    Callback = function(v)
-        if changingToggle then return end
-        State.PlaybackEnabled = v == true
-        queueSave()
-        if v then
-            if State.Recording then
-                setWindToggle(recordToggle, false)
-                StopRecording(true)
-            end
-            local ok, msg = startPlayback()
-            if not ok then setStatus("Playback armed", tostring(msg)) end
-        elseif State.Playing then
-            stopPlayback("Stopped by user")
-        end
-    end,
-})
+playbackToggle = safeToggle(MacrosTab, { Title = "Playback", Value = State.PlaybackEnabled, Callback = function(v)
+    if changingToggle then return end
+    State.PlaybackEnabled = v == true; queueSave()
+    if v then
+        if State.Recording then setWindToggle(recordToggle, false); StopRecording(true) end
+        local ok, msg = startPlayback(); if not ok then setStatus("Playback armed", tostring(msg)) end
+    elseif State.Playing then stopPlayback("Stopped by user") end
+end })
 Gui.PlayToggle = playbackToggle
 
 safeSection(PlayerTab, { Title = "Player Action State", Desc = "Passive recorder" })
-
 local playerStatus = wrapParagraph(safeParagraph(PlayerTab, { Title = "State: Idle", Desc = "Waiting" }))
 local playerRuntime = wrapParagraph(safeParagraph(PlayerTab, { Title = "Live match", Desc = "..." }))
 local playerSummary = wrapParagraph(safeParagraph(PlayerTab, { Title = "Recorded: 0", Desc = "None" }))
-Gui.PlayerStatus = playerStatus
-Gui.PlayerRuntime = playerRuntime
-Gui.PlayerActionSummary = playerSummary
+Gui.PlayerStatus = playerStatus; Gui.PlayerRuntime = playerRuntime; Gui.PlayerActionSummary = playerSummary
 
 local function refreshPlayerList()
     if not playerSummary then return end
-    local lines = {}
-    local first = math.max(1, #State.PlayerActions - 7)
+    local lines = {}; local first = math.max(1, #State.PlayerActions - 7)
     for i = first, #State.PlayerActions do
-        local a = State.PlayerActions[i]
-        local subj = a.Unit or a.Handle or ""
+        local a = State.PlayerActions[i]; local subj = a.Unit or a.Handle or ""
         if a.Type == "Speed" then subj = "x" .. tostring(a.Speed or 1)
         elseif a.Type == "Ability" then subj = "Ability #" .. tostring(a.AbilityIndex or 1)
         elseif a.Type == "BoostLink" then subj = string.format("%s > %s", a.SourceUnit or "?", a.TargetUnit or "?")
         elseif a.Type == "Skip" then subj = "skip" end
-        lines[#lines + 1] = string.format("%02d | t%.2f | W%s | %s | %s",
-            i, a.RecordedAt or 0, a.Wave or 0, a.Type or "?", subj)
+        lines[#lines + 1] = string.format("%02d | t%.2f | W%s | %s | %s", i, a.RecordedAt or 0, a.Wave or 0, a.Type or "?", subj)
     end
-    playerSummary:SetTitle(string.format("Recorded: %d", #State.PlayerActions))
-    playerSummary:SetDesc(#lines > 0 and table.concat(lines, "\n") or "None")
+    playerSummary:SetTitle(string.format("Recorded: %d", #State.PlayerActions)); playerSummary:SetDesc(#lines > 0 and table.concat(lines, "\n") or "None")
 end
 
 local newPlayerName = ""
-safeInput(PlayerTab, {
-    Title = "Create Player Macro", Placeholder = "example: my_player_run", Value = "",
-    Callback = function(v) newPlayerName = sanitize(v) end,
-})
-
+safeInput(PlayerTab, { Title = "Create Player Macro", Placeholder = "example: my_player_run", Value = "", Callback = function(v) newPlayerName = sanitize(v) end })
 local playerProfileValues = listPlayerProfiles()
 if #playerProfileValues == 0 then playerProfileValues = { "(none)" } end
 local playerDropdown
 
 local function refreshPlayerProfiles(sel)
-    local v = listPlayerProfiles()
-    if #v == 0 then v = { "(none)" } end
-    if playerDropdown then
-        pcall(function() playerDropdown:Refresh(v) end)
-        if sel and sel ~= "" then pcall(function() playerDropdown:Select(sel) end) end
-    end
+    local v = listPlayerProfiles(); if #v == 0 then v = { "(none)" } end
+    if playerDropdown then pcall(function() playerDropdown:Refresh(v) end); if sel and sel ~= "" then pcall(function() playerDropdown:Select(sel) end) end end
 end
 Gui.RefreshPlayerProfiles = refreshPlayerProfiles
 
-safeButton(PlayerTab, {
-    Title = "Create New Player Macro", Icon = "file-plus",
-    Callback = function()
-        local n = sanitize(newPlayerName)
-        if n == "" then notify("Create", "Enter name"); return end
-        if HAS_FS then
-            pcall(function()
-                writefile(playerProfilePath(n),
-                    HttpService:JSONEncode({ Version = 2, Name = n, Actions = {} }))
-            end)
-        end
-        refreshPlayerProfiles(n)
-        notify("Create", n .. " ready")
-    end,
-})
+safeButton(PlayerTab, { Title = "Create New Player Macro", Icon = "file-plus", Callback = function()
+    local n = sanitize(newPlayerName); if n == "" then notify("Create", "Enter name"); return end
+    if HAS_FS then pcall(function() writefile(playerProfilePath(n), HttpService:JSONEncode({ Version = 2, Name = n, Actions = {} })) end) end
+    refreshPlayerProfiles(n); notify("Create", n .. " ready")
+end })
 
-playerDropdown = safeDropdown(PlayerTab, {
-    Title = "Select Player Macro", Values = playerProfileValues,
-    Value = playerProfileValues[1], Multi = false,
-    Callback = function(v)
-        if v == "(none)" then return end
-        local path = playerProfilePath(v)
-        if HAS_FS and isfile(path) then
-            local ok, dec = pcall(function() return HttpService:JSONDecode(readfile(path)) end)
-            if ok and type(dec) == "table" and type(dec.Actions) == "table" then
-                State.PlayerActions = dec.Actions
-                State.PlayerRecordingProfileName = v
-                refreshPlayerList()
-            end
-        end
-    end,
-})
+playerDropdown = safeDropdown(PlayerTab, { Title = "Select Player Macro", Values = playerProfileValues, Value = playerProfileValues[1], Multi = false, Callback = function(v)
+    if v == "(none)" then return end
+    local path = playerProfilePath(v)
+    if HAS_FS and isfile(path) then
+        local ok, dec = pcall(function() return HttpService:JSONDecode(readfile(path)) end)
+        if ok and type(dec) == "table" and type(dec.Actions) == "table" then State.PlayerActions = dec.Actions; State.PlayerRecordingProfileName = v; refreshPlayerList() end
+    end
+end })
 
 local changingPlayerToggle = false
 local playerRecToggle
 
-local function setPlayerToggle(el, v)
-    if not el then return end
-    changingPlayerToggle = true
-    pcall(function() el:Set(v) end)
-    changingPlayerToggle = false
-end
+local function setPlayerToggle(el, v) if not el then return end; changingPlayerToggle = true; pcall(function() el:Set(v) end); changingPlayerToggle = false end
 
-playerRecToggle = safeToggle(PlayerTab, {
-    Title = "Record", Value = false,
-    Callback = function(v)
-        if changingPlayerToggle then return end
-        if v then
-            if State.Playing then stopPlayback("Recording began") end
-            local n = State.PlayerRecordingProfileName ~= "" and State.PlayerRecordingProfileName or newPlayerName
-            local ok, msg = startPlayerRec(n)
-            if not ok then
-                setPlayerToggle(playerRecToggle, false)
-                notify("Cannot record", tostring(msg))
-            end
-        elseif State.PlayerRecording then
-            local ok, msg = stopPlayerRec(true)
-            if ok then
-                refreshPlayerProfiles(State.PlayerRecordingProfileName)
-                refreshPlayerList()
-            else
-                notify("Cannot save", tostring(msg))
-            end
-        end
-    end,
-})
+playerRecToggle = safeToggle(PlayerTab, { Title = "Record", Value = false, Callback = function(v)
+    if changingPlayerToggle then return end
+    if v then
+        if State.Playing then stopPlayback("Recording began") end
+        local n = State.PlayerRecordingProfileName ~= "" and State.PlayerRecordingProfileName or newPlayerName
+        local ok, msg = startPlayerRec(n); if not ok then setPlayerToggle(playerRecToggle, false); notify("Cannot record", tostring(msg)) end
+    elseif State.PlayerRecording then
+        local ok, msg = stopPlayerRec(true)
+        if ok then refreshPlayerProfiles(State.PlayerRecordingProfileName); refreshPlayerList() else notify("Cannot save", tostring(msg)) end
+    end
+end })
 Gui.PlayerRecordToggle = playerRecToggle
 
 local playerPlayToggle
-playerPlayToggle = safeToggle(PlayerTab, {
-    Title = "Playback", Value = false,
-    Callback = function(v)
-        if changingPlayerToggle then return end
-        if v then
-            if State.PlayerRecording then
-                setPlayerToggle(playerRecToggle, false)
-                stopPlayerRec(true)
+playerPlayToggle = safeToggle(PlayerTab, { Title = "Playback", Value = false, Callback = function(v)
+    if changingPlayerToggle then return end
+    if v then
+        if State.PlayerRecording then setPlayerToggle(playerRecToggle, false); stopPlayerRec(true) end
+        local profileName = playerDropdown and playerDropdown.Value or ""
+        local path = playerProfilePath(profileName)
+        if HAS_FS and isfile(path) then local ok, dec = pcall(function() return HttpService:JSONDecode(readfile(path)) end); if ok and dec and type(dec.Actions) == "table" then State.PlayerActions = dec.Actions end end
+        if #State.PlayerActions == 0 then setPlayerToggle(playerPlayToggle, false); notify("Cannot play", "No actions"); return end
+        State.Playing = true; State.RuntimeHandles = {}; State.UsedRuntimeTowers = setmetatable({}, { __mode = "k" }); State.PlayerPlaybackSession = State.PlayerPlaybackSession + 1
+        local sess = State.PlayerPlaybackSession
+        task.spawn(function()
+            local startedAt = os.clock()
+            for _, a in ipairs(State.PlayerActions) do
+                if not State.Playing or sess ~= State.PlayerPlaybackSession then break end
+                local target = tonumber(a.RecordedAt) or 0
+                while (os.clock() - startedAt) < target and State.Playing and sess == State.PlayerPlaybackSession do humanDelay(0.06, 0.02) end
+                if not State.Playing or sess ~= State.PlayerPlaybackSession then break end
+                if a.Type == "Place" then local cf = arrayToCFrame(a.CFrame); if cf and getMoney() >= (tonumber(a.EstimatedCost) or 0) and Remotes.Place then pcall(function() Remotes.Place:FireServer(a.Unit, cf, false) end); humanDelay(0.35, 0.1) end
+                elseif a.Type == "Upgrade" then local t = findRuntime(a); if t and Remotes.Upgrade then for _ = 1, 6 do if not State.Playing then break end; if (tonumber(t:GetAttribute("Upgrade")) or 0) >= (tonumber(a.ToLevel) or 1) then break end; pcall(function() Remotes.Upgrade:FireServer(tostring(t.Name)) end); humanDelay(0.2, 0.05) end end
+                elseif a.Type == "Sell" then local t = findRuntime(a); if t and Remotes.Sell then pcall(function() Remotes.Sell:FireServer(tostring(t.Name)) end) end; humanDelay(0.2, 0.05)
+                elseif a.Type == "Target" then local t = findRuntime(a); if t and Remotes.Target then pcall(function() Remotes.Target:FireServer(tostring(t.Name)) end) end; humanDelay(0.2, 0.05)
+                elseif a.Type == "Ability" then local t = findRuntime(a); local abilityId; if t then local attrId = t:GetAttribute("ID"); abilityId = attrId and tostring(attrId) or tostring(t.Name) elseif a.TowerId then abilityId = tostring(a.TowerId) end; if abilityId and Remotes.Ability then local idx = tonumber(a.AbilityIndex) or 1; humanDelay(0.25, 0.1); if Remotes.Ability:IsA("RemoteEvent") then pcall(function() Remotes.Ability:FireServer(abilityId, idx) end) elseif Remotes.Ability:IsA("RemoteFunction") then pcall(function() Remotes.Ability:InvokeServer(abilityId, idx) end) end; humanDelay(0.3, 0.1) end
+                elseif a.Type == "BoostLink" then local src = findRuntime({ Unit = a.SourceUnit }); local tgt = findRuntime({ Unit = a.TargetUnit }); if src and tgt and Remotes.BoostSelect then pcall(function() Remotes.BoostSelect:FireServer(tonumber(src.Name), tostring(tgt.Name)) end) end; humanDelay(0.2, 0.05)
+                elseif a.Type == "Speed" then if Remotes.Speed then pcall(function() Remotes.Speed:FireServer(tonumber(a.Speed) or 1) end) end; humanDelay(0.15, 0.05)
+                elseif a.Type == "Skip" then if Remotes.Skip then pcall(function() Remotes.Skip:FireServer(true) end) end; humanDelay(0.15, 0.05) end
             end
-            local profileName = playerDropdown and playerDropdown.Value or ""
-            local path = playerProfilePath(profileName)
-            if HAS_FS and isfile(path) then
-                local ok, dec = pcall(function() return HttpService:JSONDecode(readfile(path)) end)
-                if ok and dec and type(dec.Actions) == "table" then
-                    State.PlayerActions = dec.Actions
-                end
-            end
-            if #State.PlayerActions == 0 then
-                setPlayerToggle(playerPlayToggle, false)
-                notify("Cannot play", "No actions")
-                return
-            end
-
-            State.Playing = true
-            State.RuntimeHandles = {}
-            State.UsedRuntimeTowers = setmetatable({}, { __mode = "k" })
-            State.PlayerPlaybackSession = State.PlayerPlaybackSession + 1
-            local sess = State.PlayerPlaybackSession
-
-            task.spawn(function()
-                local startedAt = os.clock()
-                for _, a in ipairs(State.PlayerActions) do
-                    if not State.Playing or sess ~= State.PlayerPlaybackSession then break end
-                    local target = tonumber(a.RecordedAt) or 0
-                    while (os.clock() - startedAt) < target and State.Playing and sess == State.PlayerPlaybackSession do
-                        humanDelay(0.06, 0.02)
-                    end
-                    if not State.Playing or sess ~= State.PlayerPlaybackSession then break end
-
-                    if a.Type == "Place" then
-                        local cf = arrayToCFrame(a.CFrame)
-                        if cf and getMoney() >= (tonumber(a.EstimatedCost) or 0) and Remotes.Place then
-                            pcall(function() Remotes.Place:FireServer(a.Unit, cf, false) end)
-                            humanDelay(0.35, 0.1)
-                        end
-                    elseif a.Type == "Upgrade" then
-                        local t = findRuntime(a)
-                        if t and Remotes.Upgrade then
-                            for _ = 1, 6 do
-                                if not State.Playing then break end
-                                if (tonumber(t:GetAttribute("Upgrade")) or 0) >= (tonumber(a.ToLevel) or 1) then break end
-                                pcall(function() Remotes.Upgrade:FireServer(tostring(t.Name)) end)
-                                humanDelay(0.2, 0.05)
-                            end
-                        end
-                    elseif a.Type == "Sell" then
-                        local t = findRuntime(a)
-                        if t and Remotes.Sell then pcall(function() Remotes.Sell:FireServer(tostring(t.Name)) end) end
-                        humanDelay(0.2, 0.05)
-                    elseif a.Type == "Target" then
-                        local t = findRuntime(a)
-                        if t and Remotes.Target then pcall(function() Remotes.Target:FireServer(tostring(t.Name)) end) end
-                        humanDelay(0.2, 0.05)
-                    elseif a.Type == "Ability" then
-                        local t = findRuntime(a)
-                        local abilityId
-                        if t then
-                            local attrId = t:GetAttribute("ID")
-                            abilityId = attrId and tostring(attrId) or tostring(t.Name)
-                        elseif a.TowerId then
-                            abilityId = tostring(a.TowerId)
-                        end
-                        if abilityId and Remotes.Ability then
-                            local idx = tonumber(a.AbilityIndex) or 1
-                            humanDelay(0.25, 0.1)
-                            if Remotes.Ability:IsA("RemoteEvent") then
-                                pcall(function() Remotes.Ability:FireServer(abilityId, idx) end)
-                            elseif Remotes.Ability:IsA("RemoteFunction") then
-                                pcall(function() Remotes.Ability:InvokeServer(abilityId, idx) end)
-                            end
-                            humanDelay(0.3, 0.1)
-                        end
-                    elseif a.Type == "BoostLink" then
-                        local src = findRuntime({ Unit = a.SourceUnit })
-                        local tgt = findRuntime({ Unit = a.TargetUnit })
-                        if src and tgt and Remotes.BoostSelect then
-                            pcall(function() Remotes.BoostSelect:FireServer(tonumber(src.Name), tostring(tgt.Name)) end)
-                        end
-                        humanDelay(0.2, 0.05)
-                    elseif a.Type == "Speed" then
-                        if Remotes.Speed then pcall(function() Remotes.Speed:FireServer(tonumber(a.Speed) or 1) end) end
-                        humanDelay(0.15, 0.05)
-                    elseif a.Type == "Skip" then
-                        if Remotes.Skip then pcall(function() Remotes.Skip:FireServer(true) end) end
-                        humanDelay(0.15, 0.05)
-                    end
-                end
-                if sess == State.PlayerPlaybackSession then State.Playing = false end
-            end)
-        elseif State.Playing then
-            stopPlayback("Stopped by user")
-        end
-    end,
-})
+            if sess == State.PlayerPlaybackSession then State.Playing = false end
+        end)
+    elseif State.Playing then stopPlayback("Stopped by user") end
+end })
 Gui.PlayerPlaybackToggle = playerPlayToggle
 
-task.spawn(function()
-    while State.Running do
-        if playerRuntime then
-            playerRuntime:SetDesc(string.format("Wave %d | Money %d | %s | Base %s | Speed x%d",
-                getWave(), getMoney(), getUnitText(), getBaseHp(), State.Speed))
-        end
-        humanDelay(0.6, 0.2)
-    end
-end)
+task.spawn(function() while State.Running do if playerRuntime then playerRuntime:SetDesc(string.format("Wave %d | Money %d | %s | Base %s | Speed x%d", getWave(), getMoney(), getUnitText(), getBaseHp(), State.Speed)) end; humanDelay(0.6, 0.2) end end)
 
 safeSection(MiscTab, { Title = "Wave & Speed", Desc = "Automation" })
-safeToggle(MiscTab, {
-    Title = "Auto Skip Waves", Value = State.AutoSkip,
-    Callback = function(v) State.AutoSkip = v == true; queueSave() end,
-})
-safeToggle(MiscTab, {
-    Title = "Auto Speed Scale", Value = State.AutoSpeed,
-    Callback = function(v) State.AutoSpeed = v == true; queueSave() end,
-})
-safeDropdown(MiscTab, {
-    Title = "Speed Scale", Values = { "x1", "x2", "x3", "x4", "x5", "x6" },
-    Value = "x" .. tostring(State.Speed), Multi = false,
-    Callback = function(v)
-        local s = tonumber(tostring(v):match("%d+")) or 1
-        State.Speed = math.clamp(s, 1, 6)
-        queueSave()
-    end,
-})
-safeSlider(MiscTab, {
-    Title = "Speed Scale Delay", Desc = "Seconds", Step = 0.5,
-    Value = { Min = 0.5, Max = 10, Default = State.SpeedScaleDelay },
-    Callback = function(v) State.SpeedScaleDelay = math.clamp(tonumber(v) or 1, 0.5, 10); queueSave() end,
-})
+safeToggle(MiscTab, { Title = "Auto Skip Waves", Value = State.AutoSkip, Callback = function(v) State.AutoSkip = v == true; queueSave() end })
+safeToggle(MiscTab, { Title = "Auto Speed Scale", Value = State.AutoSpeed, Callback = function(v) State.AutoSpeed = v == true; queueSave() end })
+safeDropdown(MiscTab, { Title = "Speed Scale", Values = { "x1", "x2", "x3", "x4", "x5", "x6" }, Value = "x" .. tostring(State.Speed), Multi = false, Callback = function(v) local s = tonumber(tostring(v):match("%d+")) or 1; State.Speed = math.clamp(s, 1, 6); queueSave() end })
+safeSlider(MiscTab, { Title = "Speed Scale Delay", Desc = "Seconds", Step = 0.5, Value = { Min = 0.5, Max = 10, Default = State.SpeedScaleDelay }, Callback = function(v) State.SpeedScaleDelay = math.clamp(tonumber(v) or 1, 0.5, 10); queueSave() end })
 
 safeSection(MiscTab, { Title = "Movement", Desc = "AntiKick" })
-safeToggle(MiscTab, {
-    Title = "Moving Around (AntiKick)", Value = State.MovingAround,
-    Callback = function(v) setMoving(v); queueSave() end,
-})
+safeToggle(MiscTab, { Title = "Moving Around (AntiKick)", Value = State.MovingAround, Callback = function(v) setMoving(v); queueSave() end })
 
 if State.MovingAround then task.defer(function() setMoving(true) end) end
-
-if State.ProfileName ~= "" then
-    local ok = loadProfile(State.ProfileName)
-    if not ok then State.ProfileName = "" end
-end
-
-if State.PlaybackEnabled and #State.Actions > 0 then
-    task.delay(rand(0.8, 2.0), function()
-        if State.PlaybackEnabled and #State.Actions > 0 then startEnabledPlayback() end
-    end)
-end
+if State.ProfileName ~= "" then local ok = loadProfile(State.ProfileName); if not ok then State.ProfileName = "" end end
+if State.PlaybackEnabled and #State.Actions > 0 then task.delay(rand(0.8, 2.0), function() if State.PlaybackEnabled and #State.Actions > 0 then startEnabledPlayback() end end) end
 
 State.AutomationSession = State.AutomationSession + 1
 local automationSession = State.AutomationSession
 
 task.spawn(function()
-    local lastReady, lastSkip = 0, 0
-    local speedReadySince
-    local lastRefresh = 0
-    local wasReady = false
-    local startupSpeedReset = false
-    local replayLatched = false
-    local restartAfterReplay = false
-
+    local lastReady, lastSkip = 0, 0; local speedReadySince; local lastRefresh = 0; local wasReady = false; local startupSpeedReset = false; local replayLatched = false; local restartAfterReplay = false
     while State.Running and automationSession == State.AutomationSession do
         local now = os.clock()
-        if now - lastRefresh >= 10 then
-            lastRefresh = now
-            refreshObjects()
-        end
-
-        local ended = gameEnded()
-        local mr = TowerDataFolder ~= nil and TowersFolder ~= nil and Remotes.Place ~= nil
-        local macroCfg = State.PlaybackEnabled and State.ProfileName ~= ""
-        local macroPrep = not macroCfg or #State.Actions > 0
+        if now - lastRefresh >= 10 then lastRefresh = now; refreshObjects() end
+        local ended = gameEnded(); local mr = TowerDataFolder ~= nil and TowersFolder ~= nil and Remotes.Place ~= nil
+        local macroCfg = State.PlaybackEnabled and State.ProfileName ~= ""; local macroPrep = not macroCfg or #State.Actions > 0
         local macroAuto = macroPrep and (not macroCfg or State.PlaybackFirstActionArmed)
 
-        if not mr or ended then
-            State.AutoPlaybackStarted = false
-            State.PlaybackFirstActionArmed = false
-            wasReady = false
-            speedReadySince = nil
-            startupSpeedReset = false
-        elseif not wasReady then
-            wasReady = true
-            speedReadySince = nil
-            startupSpeedReset = false
-        elseif State.PlaybackEnabled and not State.AutoPlaybackStarted
-            and not State.Playing and not State.Recording
-            and #State.Actions > 0 and Gui.StartEnabledPlayback then
-            Gui.StartEnabledPlayback()
-        end
+        if not mr or ended then State.AutoPlaybackStarted = false; State.PlaybackFirstActionArmed = false; wasReady = false; speedReadySince = nil; startupSpeedReset = false
+        elseif not wasReady then wasReady = true; speedReadySince = nil; startupSpeedReset = false
+        elseif State.PlaybackEnabled and not State.AutoPlaybackStarted and not State.Playing and not State.Recording and #State.Actions > 0 and Gui.StartEnabledPlayback then Gui.StartEnabledPlayback() end
 
-        if State.AutoReady and not ended and Remotes.Ready and now - lastReady >= 1 then
-            lastReady = now
-            pcall(function() Remotes.Ready:FireServer(true) end)
-        end
+        if State.AutoReady and not ended and Remotes.Ready and now - lastReady >= 1 then lastReady = now; pcall(function() Remotes.Ready:FireServer(true) end) end
+        if mr and macroPrep and not macroAuto and (State.AutoSpeed or State.AutoSkip) and Remotes.Speed and not startupSpeedReset then startupSpeedReset = true; pcall(function() Remotes.Speed:FireServer(1) end) end
 
-        if mr and macroPrep and not macroAuto
-            and (State.AutoSpeed or State.AutoSkip) and Remotes.Speed and not startupSpeedReset then
-            startupSpeedReset = true
-            pcall(function() Remotes.Speed:FireServer(1) end)
-        end
-
-        local gui = getGui()
-        local skipGui = gui and gui:FindFirstChild("skipWave")
-        local skipOpen = skipGui and skipGui.Enabled == true
-        if State.AutoSkip and macroAuto and not ended and Remotes.Skip
-            and skipOpen and now - lastSkip >= rand(0.3, 0.5) then
-            lastSkip = now
-            pcall(function() Remotes.Skip:FireServer(true) end)
-        end
+        local gui = getGui(); local skipGui = gui and gui:FindFirstChild("skipWave"); local skipOpen = skipGui and skipGui.Enabled == true
+        if State.AutoSkip and macroAuto and not ended and Remotes.Skip and skipOpen and now - lastSkip >= rand(0.3, 0.5) then lastSkip = now; pcall(function() Remotes.Skip:FireServer(true) end) end
 
         local speedOk = State.AutoSpeed and macroAuto and mr and Remotes.Speed and not ended
-        if speedOk then
-            if speedReadySince == nil then speedReadySince = now
-            elseif now - speedReadySince >= State.SpeedScaleDelay then
-                speedReadySince = now
-                pcall(function() Remotes.Speed:FireServer(State.Speed) end)
-            end
-        else
-            speedReadySince = nil
-        end
+        if speedOk then if speedReadySince == nil then speedReadySince = now elseif now - speedReadySince >= State.SpeedScaleDelay then speedReadySince = now; pcall(function() Remotes.Speed:FireServer(State.Speed) end) end else speedReadySince = nil end
 
         if ended and not replayLatched then
             replayLatched = true
             if State.AutoBackLobby and State.LastCountedJobId ~= game.JobId then
-                State.LastCountedJobId = game.JobId
-                State.MatchesCompleted = State.MatchesCompleted + 1
-                if State.MatchesCompleted >= State.MatchesBeforeLobby then
-                    State.PendingLobbyReturn = true
-                    setStatus("Cycle complete", "Returning to lobby")
-                    humanDelay(rand(1.5, 3.0), 0.5)
-                else
-                    setStatus("Match counted",
-                        string.format("%d/%d", State.MatchesCompleted, State.MatchesBeforeLobby))
-                end
-                if Gui.UpdateMatchCounter then Gui.UpdateMatchCounter() end
-                saveConfig()
+                State.LastCountedJobId = game.JobId; State.MatchesCompleted = State.MatchesCompleted + 1
+                if State.MatchesCompleted >= State.MatchesBeforeLobby then State.PendingLobbyReturn = true; setStatus("Cycle complete", "Returning to lobby"); humanDelay(rand(1.5, 3.0), 0.5)
+                else setStatus("Match counted", string.format("%d/%d", State.MatchesCompleted, State.MatchesBeforeLobby)) end
+                if Gui.UpdateMatchCounter then Gui.UpdateMatchCounter() end; saveConfig()
             end
-
             sendMatchEndWebhook()
-
-            if State.PendingLobbyReturn then
-                task.spawn(function() forceReturnToLobby() end)
-            end
-
+            if State.PendingLobbyReturn then task.spawn(function() forceReturnToLobby() end) end
             local shouldReplay = State.AutoReplay and not State.PendingLobbyReturn
-            if shouldReplay and Remotes.Replay then
-                restartAfterReplay = not State.PendingLobbyReturn
-                    and State.PlaybackEnabled and #State.Actions > 0
-                pcall(function() Remotes.Replay:FireServer() end)
-            end
+            if shouldReplay and Remotes.Replay then restartAfterReplay = not State.PendingLobbyReturn and State.PlaybackEnabled and #State.Actions > 0; pcall(function() Remotes.Replay:FireServer() end) end
         elseif not ended then
             replayLatched = false
-            if restartAfterReplay and not State.Playing then
-                restartAfterReplay = false
-                local ok, msg = startPlayback()
-                if ok and Gui.SetPlaybackToggle then Gui.SetPlaybackToggle(true)
-                elseif not ok then setStatus("Replay", tostring(msg)) end
-            end
+            if restartAfterReplay and not State.Playing then restartAfterReplay = false; local ok, msg = startPlayback(); if ok and Gui.SetPlaybackToggle then Gui.SetPlaybackToggle(true) elseif not ok then setStatus("Replay", tostring(msg)) end end
         end
-
         humanDelay(0.12, 0.05)
     end
 end)
@@ -2403,55 +1567,24 @@ local uiSession = State.UISession
 
 task.spawn(function()
     while State.Running and uiSession == State.UISession do
-        if Gui.Runtime then
-            Gui.Runtime:SetTitle(State.Playing and ("Live match - " .. State.PlaybackMode) or "Live match")
-            Gui.Runtime:SetDesc(string.format("Wave %d | Money %d | %s | Base %s | Speed x%d",
-                getWave(), getMoney(), getUnitText(), getBaseHp(), State.Speed))
-        end
+        if Gui.Runtime then Gui.Runtime:SetTitle(State.Playing and ("Live match - " .. State.PlaybackMode) or "Live match"); Gui.Runtime:SetDesc(string.format("Wave %d | Money %d | %s | Base %s | Speed x%d", getWave(), getMoney(), getUnitText(), getBaseHp(), State.Speed)) end
         humanDelay(0.6, 0.2)
     end
 end)
 
 function Hub.Destroy()
     State.Running = false
-    State.MasterSession         = State.MasterSession + 1
-    State.MovingSession         = State.MovingSession + 1
-    State.AutomationSession     = State.AutomationSession + 1
-    State.PlaybackSession       = State.PlaybackSession + 1
-    State.PlayerPlaybackSession = State.PlayerPlaybackSession + 1
-    State.RecordSession         = State.RecordSession + 1
-    State.UISession             = State.UISession + 1
-
-    State.Recording = false
-    State.Playing = false
-    State.PlayerRecording = false
-    State.MovingAround = false
-
-    stopMove()
-    saveConfig()
-    disconnectAll(State.RecorderConnections)
-    disconnectAll(State.PlayerRecordingConnections)
-    disconnectAll(State.Connections)
-
+    State.MasterSession = State.MasterSession + 1; State.MovingSession = State.MovingSession + 1; State.AutomationSession = State.AutomationSession + 1
+    State.PlaybackSession = State.PlaybackSession + 1; State.PlayerPlaybackSession = State.PlayerPlaybackSession + 1; State.RecordSession = State.RecordSession + 1; State.UISession = State.UISession + 1
+    State.Recording = false; State.Playing = false; State.PlayerRecording = false; State.MovingAround = false
+    stopMove(); saveConfig(); disconnectAll(State.RecorderConnections); disconnectAll(State.PlayerRecordingConnections); disconnectAll(State.Connections)
     pcall(function() Window:Destroy() end)
-    if Environment.SkibidiDefenseHub == Hub then
-        Environment.SkibidiDefenseHub = nil
-    end
+    if Environment.SkibidiDefenseHub == Hub then Environment.SkibidiDefenseHub = nil end
 end
 
-Hub.State                 = State
-Hub.StartRecording        = startRecording
-Hub.StopRecording         = StopRecording
-Hub.StartPlayback         = startPlayback
-Hub.StopPlayback          = stopPlayback
-Hub.SaveProfile           = saveProfile
-Hub.LoadProfile           = loadProfile
-Hub.ListProfiles          = listProfiles
-Hub.StartPlayerRecording  = startPlayerRec
-Hub.StopPlayerRecording   = stopPlayerRec
-Hub.SetMoving             = setMoving
-Hub.SendWebhook           = sendWebhook
-Hub.SendMatchEndWebhook   = sendMatchEndWebhook
+Hub.State = State; Hub.StartRecording = startRecording; Hub.StopRecording = StopRecording; Hub.StartPlayback = startPlayback; Hub.StopPlayback = stopPlayback
+Hub.SaveProfile = saveProfile; Hub.LoadProfile = loadProfile; Hub.ListProfiles = listProfiles; Hub.StartPlayerRecording = startPlayerRec; Hub.StopPlayerRecording = stopPlayerRec
+Hub.SetMoving = setMoving; Hub.SendWebhook = sendWebhook; Hub.SendMatchEndWebhook = sendMatchEndWebhook
 
 refreshActionList()
 setStatus("Idle", State.ProfileName ~= "" and ("Loaded " .. State.ProfileName) or "Select a macro")
