@@ -20,7 +20,6 @@ end
 local Hub = {}
 Environment.SkibidiDefenseHub = Hub
 
-
 local MACRO_FOLDER = "SkibidiDefense_Macros"
 local CONFIG_FILE  = MACRO_FOLDER .. "/HubConfig.json"
 local HAS_FS = type(isfolder) == "function"
@@ -136,7 +135,6 @@ local State = {
     PlayerRecordingConnections = {},
 }
 
-
 local LOBBY_PLACE_ID = 14279693118
 local Remotes = {}
 local Scripted, TowerDataFolder, TowersFolder
@@ -177,7 +175,6 @@ local function matchReady()
         and Remotes.Sell ~= nil and Remotes.Target ~= nil
 end
 
-
 local function addConn(bucket, conn)
     if conn then table.insert(bucket, conn) end
     return conn
@@ -202,7 +199,6 @@ local function waitUntil(cond, timeout, interval)
     until os.clock() >= deadline
     return false
 end
-
 
 local function getGui() return LocalPlayer:FindFirstChildOfClass("PlayerGui") end
 
@@ -274,11 +270,9 @@ local function getMatchResult()
     return "Match Ended"
 end
 
-
 local function own(t)
     return t and t.Parent == TowerDataFolder and t:GetAttribute("Creator") == LocalPlayer.Name
 end
-
 
 local function findSelectedTower()
     if State.LastSelectedTower and State.LastSelectedTower.Parent == TowerDataFolder then
@@ -292,16 +286,8 @@ local function findSelectedTower()
             end
         end
     end
-    if TowerDataFolder then
-        for _, t in ipairs(TowerDataFolder:GetChildren()) do
-            if own(t) then
-                return t
-            end
-        end
-    end
     return nil
 end
-
 
 local function isAbilityButton(obj)
     if not obj or not obj:IsA("GuiButton") then return false end
@@ -458,7 +444,6 @@ local function forceReturnToLobby()
     end
     return changed
 end
-
 
 local MOVE_POINTS = 12
 
@@ -619,7 +604,6 @@ addConn(State.Connections, LocalPlayer.CharacterAdded:Connect(function()
     end)
 end))
 
-
 local function httpPost(url, body)
     local requesters = {
         { name = "syn.request",    fn = syn and syn.request },
@@ -649,17 +633,14 @@ local function httpPost(url, body)
                     local code = response.StatusCode or response.status or response.Status
                     if code then
                         if code >= 200 and code < 300 then
-                            print("[Webhook] " .. req.name .. " OK (" .. tostring(code) .. ")")
                             return true, req.name
                         else
-                            warn("[Webhook] " .. req.name .. " HTTP " .. tostring(code) .. " - " .. tostring(response.StatusMessage or ""))
+                            warn("[Webhook] " .. req.name .. " HTTP " .. tostring(code))
                         end
                     else
-                        print("[Webhook] " .. req.name .. " OK (no status)")
                         return true, req.name
                     end
                 else
-                    print("[Webhook] " .. req.name .. " OK (raw)")
                     return true, req.name
                 end
             else
@@ -685,7 +666,7 @@ local function sendWebhook(title, desc, color)
             title = tostring(title or "Hub"),
             description = tostring(desc or ""),
             color = tonumber(color) or 5793266,
-            footer = { text = "Made By oreshick :3" },
+            footer = { text = "Skibidi Defense Hub" },
             timestamp = DateTime.now():ToIsoDate(),
         }},
     }
@@ -720,14 +701,13 @@ local function sendMatchEndWebhook()
                     State.MatchesCompleted, State.MatchesBeforeLobby),
                   inline = false },
             },
-            footer = { text = "Made By oreshick :3" },
+            footer = { text = "Skibidi Defense Hub" },
             timestamp = DateTime.now():ToIsoDate(),
         }},
     }
     local ok, enc = pcall(function() return HttpService:JSONEncode(payload) end)
     if ok then pcall(httpPost, State.WebhookURL, enc) end
 end
-
 
 local function saveProfile(name)
     name = sanitize(name)
@@ -775,7 +755,6 @@ local function listPlayerProfiles()
     return r
 end
 
-
 local function towerModel(id, timeout)
     if not TowersFolder then return nil end
     local m
@@ -809,7 +788,6 @@ local function badTarget(mode)
     local n = tostring(mode):upper():gsub("%s+", "")
     return n == "" or n == "N/A" or n == "NA" or n == "NONE"
 end
-
 
 local StopRecording
 
@@ -1003,7 +981,6 @@ StopRecording = function(save)
     return true
 end
 
-
 local function resolveH(h)
     local t = State.RuntimeHandles[h]
     if t and t.Parent == TowerDataFolder then return t end
@@ -1108,117 +1085,6 @@ local function playTarget(action)
     return true
 end
 
-local function findAbilityButtonForTower(towerId, abilityIndex)
-    local gui = getGui()
-    if not gui then return nil end
-    local candidates = {}
-    for _, o in ipairs(gui:GetDescendants()) do
-        if o:IsA("GuiButton") and isAbilityButton(o) then
-            local idx = inferAbilityIndex(o)
-            local btnTower = o:GetAttribute("TowerId")
-            if btnTower == nil or tostring(btnTower) == tostring(towerId) then
-                table.insert(candidates, { btn = o, idx = idx })
-            end
-        end
-    end
-    if #candidates == 0 then return nil end
-    for _, c in ipairs(candidates) do
-        if c.idx == abilityIndex then return c.btn end
-    end
-    return candidates[1].btn
-end
-
-local function playAbility(action)
-    local t = resolveH(action.Handle)
-    if not t and action.Unit then
-        for _, child in ipairs(TowerDataFolder:GetChildren()) do
-            if own(child) and tostring(child:GetAttribute("ID")) == tostring(action.Unit) then
-                t = child; break
-            end
-        end
-    end
-    if not t and action.TowerId then
-        t = TowerDataFolder:FindFirstChild(tostring(action.TowerId))
-    end
-    if not t then
-        t = findSelectedTower()
-    end
-
-    local towerId
-    if t then
-        local attrId = t:GetAttribute("ID")
-        if attrId ~= nil then
-            towerId = tostring(attrId)
-        else
-            towerId = tostring(t.Name)
-        end
-    elseif action.TowerId then
-        towerId = tostring(action.TowerId)
-    end
-
-    local idx = tonumber(action.AbilityIndex) or 1
-
-    if not towerId then
-        return true, "no tower for ability"
-    end
-
-    humanDelay(0.3, 0.15)
-
-    local remoteOk = false
-    if Remotes.Ability then
-        if Remotes.Ability:IsA("RemoteEvent") then
-            remoteOk = pcall(function() Remotes.Ability:FireServer(towerId, idx) end)
-        elseif Remotes.Ability:IsA("RemoteFunction") then
-            remoteOk = pcall(function() Remotes.Ability:InvokeServer(towerId, idx) end)
-        end
-    end
-
-    humanDelay(0.12, 0.06)
-
-
-    local shouldClick = (not remoteOk) or t ~= nil
-    if shouldClick then
-        local btn = findAbilityButtonForTower(towerId, idx)
-        if btn then
-            if type(firesignal) == "function" then
-                pcall(firesignal, btn.MouseButton1Click)
-            elseif type(getconnections) == "function" then
-                local ok, conns = pcall(getconnections, btn.MouseButton1Click)
-                if ok and type(conns) == "table" then
-                    for _, c in ipairs(conns) do
-                        pcall(function()
-                            if type(c.Fire) == "function" then c:Fire()
-                            elseif type(c.Function) == "function" then c.Function() end
-                        end)
-                    end
-                end
-            end
-            humanDelay(0.1, 0.05)
-        end
-    end
-
-    return true
-end
-
-local function playBoost(action)
-    local src = resolveH(action.SourceHandle)
-    local tgt = resolveH(action.TargetHandle)
-    if not src or not tgt then return true end
-    if not Remotes.BoostSelect or not Remotes.BoostSelect:IsA("RemoteEvent") then return true end
-    local sid = tonumber(src.Name)
-    if not sid then return true end
-    if tostring(tgt:GetAttribute("ClockBoost")) == tostring(sid) then return true end
-    pcall(function() Remotes.BoostSelect:FireServer(sid, tostring(tgt.Name)) end)
-    waitUntil(function()
-        return not State.Playing
-            or src.Parent ~= TowerDataFolder
-            or tgt.Parent ~= TowerDataFolder
-            or tostring(tgt:GetAttribute("ClockBoost")) == tostring(sid)
-    end, 5, 0.05)
-    humanDelay(0.15, 0.05)
-    return true
-end
-
 local function waitGate(action, startedAt)
     local rt = tonumber(action.RecordedAt) or 0
     local cost = tonumber(action.EstimatedCost) or 0
@@ -1285,7 +1151,107 @@ local function startPlayback()
     end)
     return true
 end
+local function findAbilityButtonForTower(towerId, abilityIndex)
+    local gui = getGui()
+    if not gui then return nil end
+    local candidates = {}
+    for _, o in ipairs(gui:GetDescendants()) do
+        if o:IsA("GuiButton") and isAbilityButton(o) then
+            local idx = inferAbilityIndex(o)
+            local btnTower = o:GetAttribute("TowerId")
+            if btnTower == nil or tostring(btnTower) == tostring(towerId) then
+                table.insert(candidates, { btn = o, idx = idx })
+            end
+        end
+    end
+    if #candidates == 0 then return nil end
+    for _, c in ipairs(candidates) do
+        if c.idx == abilityIndex then return c.btn end
+    end
+    return candidates[1].btn
+end
 
+local function playAbility(action)
+    local t = resolveH(action.Handle)
+    if not t and action.Unit then
+        for _, child in ipairs(TowerDataFolder:GetChildren()) do
+            if own(child) and tostring(child:GetAttribute("ID")) == tostring(action.Unit) then
+                t = child; break
+            end
+        end
+    end
+    if not t and action.TowerId then
+        t = TowerDataFolder:FindFirstChild(tostring(action.TowerId))
+    end
+
+    if not t then
+        return true, "no tower for ability"
+    end
+
+    local towerId
+    local attrId = t:GetAttribute("ID")
+    if attrId ~= nil then
+        towerId = tostring(attrId)
+    else
+        towerId = tostring(t.Name)
+    end
+
+    local idx = tonumber(action.AbilityIndex) or 1
+
+    humanDelay(0.3, 0.15)
+
+    local remoteOk = false
+    if Remotes.Ability then
+        if Remotes.Ability:IsA("RemoteEvent") then
+            remoteOk = pcall(function() Remotes.Ability:FireServer(towerId, idx) end)
+        elseif Remotes.Ability:IsA("RemoteFunction") then
+            remoteOk = pcall(function() Remotes.Ability:InvokeServer(towerId, idx) end)
+        end
+    end
+
+    humanDelay(0.12, 0.06)
+
+    if not remoteOk then
+        local btn = findAbilityButtonForTower(towerId, idx)
+        if btn then
+            if type(firesignal) == "function" then
+                pcall(firesignal, btn.MouseButton1Click)
+            elseif type(getconnections) == "function" then
+                local ok, conns = pcall(getconnections, btn.MouseButton1Click)
+                if ok and type(conns) == "table" then
+                    for _, c in ipairs(conns) do
+                        pcall(function()
+                            if type(c.Fire) == "function" then c:Fire()
+                            elseif type(c.Function) == "function" then c.Function() end
+                        end)
+                    end
+                end
+            end
+            humanDelay(0.1, 0.05)
+        end
+    end
+
+    return true
+end
+
+local function playBoost(action)
+    local src = resolveH(action.SourceHandle)
+    local tgt = resolveH(action.TargetHandle)
+    if not src or not tgt then return true end
+    if not Remotes.BoostSelect or not Remotes.BoostSelect:IsA("RemoteEvent") then return true end
+    local sid = tonumber(src.Name)
+    if not sid then return true end
+    if tostring(tgt:GetAttribute("ClockBoost")) == tostring(sid) then return true end
+    pcall(function() Remotes.BoostSelect:FireServer(sid, tostring(tgt.Name)) end)
+    waitUntil(function()
+        return not State.Playing
+            or src.Parent ~= TowerDataFolder
+            or tgt.Parent ~= TowerDataFolder
+            or tostring(tgt:GetAttribute("ClockBoost")) == tostring(sid)
+    end, 5, 0.05)
+    humanDelay(0.15, 0.05)
+    return true
+end
 
 local function startPlayerRec(name)
     if State.Playing then return false, "stop playback first" end
@@ -1512,7 +1478,6 @@ local function queueSave()
     end)
 end
 
-
 local ModeChapters = {
     Story = {
         "Chapter 1", "Chapter 1.5", "Chapter 2", "Chapter 3", "Chapter 4",
@@ -1632,7 +1597,7 @@ local Window
 do
     local ok, r = pcall(function()
         return WindUI:CreateWindow({
-            Title = "Skibidi Defense Hub", Author = "Made By oreshick :3",
+            Title = "Skibidi Defense Hub", Author = "Hub",
             Folder = "SkibidiDefenseHub", Icon = "clapperboard", Theme = "Dark",
             Size = UDim2.fromOffset(620, 480), Transparent = true, HideSearchBar = true,
             NewElements = true, ToggleKey = Enum.KeyCode.RightShift,
@@ -1674,7 +1639,6 @@ local function safeDropdown(t, o) if not t then return nil end; local ok, r = pc
 local function safeSlider(t, o) if not t then return nil end; local ok, r = pcall(function() return t:Slider(o) end); return ok and r or nil end
 local function safeParagraph(t, o) if not t then return nil end; local ok, r = pcall(function() return t:Paragraph(o) end); return ok and r or nil end
 
-
 local LobbyTab   = safeTab(Window, { Title = "Lobby", Icon = "house" })
 local MacrosTab  = safeTab(Window, { Title = "Macros", Icon = "clapperboard" })
 local PlayerTab  = safeTab(Window, { Title = "Player Actions", Icon = "user" })
@@ -1706,7 +1670,6 @@ local function refreshActionList()
     Gui.ActionSummary:SetTitle(string.format("Recorded actions: %d", #State.Actions))
     Gui.ActionSummary:SetDesc(#lines > 0 and table.concat(lines, "\n") or "No actions loaded")
 end
-
 
 safeSection(LobbyTab, { Title = "Lobby Automation", Desc = "Ready and replay" })
 
@@ -1837,7 +1800,6 @@ task.spawn(function()
         humanDelay(0.9, 0.3)
     end
 end)
-
 
 safeSection(WebhookTab, { Title = "Discord Webhook", Desc = "Match notifications" })
 safeInput(WebhookTab, {
@@ -2045,7 +2007,6 @@ playbackToggle = safeToggle(MacrosTab, {
     end,
 })
 Gui.PlayToggle = playbackToggle
-
 
 safeSection(PlayerTab, { Title = "Player Action State", Desc = "Passive recorder" })
 
