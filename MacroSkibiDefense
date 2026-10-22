@@ -20,9 +20,7 @@ end
 local Hub = {}
 Environment.SkibidiDefenseHub = Hub
 
--- ══════════════════════════════════════════════════════════════════════════════
---  UTILITIES
--- ══════════════════════════════════════════════════════════════════════════════
+
 local MACRO_FOLDER = "SkibidiDefense_Macros"
 local CONFIG_FILE  = MACRO_FOLDER .. "/HubConfig.json"
 local HAS_FS = type(isfolder) == "function"
@@ -74,9 +72,6 @@ end
 local function profilePath(name)       return MACRO_FOLDER .. "/" .. sanitize(name) .. ".json" end
 local function playerProfilePath(name) return MACRO_FOLDER .. "/" .. sanitize(name) .. "_player.json" end
 
--- ══════════════════════════════════════════════════════════════════════════════
---  STATE
--- ══════════════════════════════════════════════════════════════════════════════
 local State = {
     Running = true,
 
@@ -141,9 +136,6 @@ local State = {
     PlayerRecordingConnections = {},
 }
 
--- ══════════════════════════════════════════════════════════════════════════════
---  GAME OBJECTS
--- ══════════════════════════════════════════════════════════════════════════════
 local LOBBY_PLACE_ID = 14279693118
 local Remotes = {}
 local Scripted, TowerDataFolder, TowersFolder
@@ -184,9 +176,7 @@ local function matchReady()
         and Remotes.Sell ~= nil and Remotes.Target ~= nil
 end
 
--- ══════════════════════════════════════════════════════════════════════════════
---  CONNECTIONS
--- ══════════════════════════════════════════════════════════════════════════════
+
 local function addConn(bucket, conn)
     if conn then table.insert(bucket, conn) end
     return conn
@@ -212,9 +202,7 @@ local function waitUntil(cond, timeout, interval)
     return false
 end
 
--- ══════════════════════════════════════════════════════════════════════════════
---  GAME READ HELPERS
--- ══════════════════════════════════════════════════════════════════════════════
+
 local function getGui() return LocalPlayer:FindFirstChildOfClass("PlayerGui") end
 
 local function gameEnded()
@@ -285,21 +273,11 @@ local function getMatchResult()
     return "Match Ended"
 end
 
--- ══════════════════════════════════════════════════════════════════════════════
---  OWN
--- ══════════════════════════════════════════════════════════════════════════════
+
 local function own(t)
     return t and t.Parent == TowerDataFolder and t:GetAttribute("Creator") == LocalPlayer.Name
 end
 
--- ══════════════════════════════════════════════════════════════════════════════
---  SEARCH SELECTED TOWER (Game.Selection / SelectedTower / highlight)
--- ══════════════════════════════════════════════════════════════════════════════
--- Пытаемся найти выбранную башню через:
--- 1) State.LastSelectedTower (если был установлен)
--- 2) Workspace / Game:GetService("Selection") — не всегда доступно
--- 3) Атрибут Selected на башнях
--- 4) Первая своя башня (fallback)
 local function findSelectedTower()
     if State.LastSelectedTower and State.LastSelectedTower.Parent == TowerDataFolder then
         return State.LastSelectedTower
@@ -312,7 +290,7 @@ local function findSelectedTower()
             end
         end
     end
-    -- fallback — первая своя башня
+
     if TowerDataFolder then
         for _, t in ipairs(TowerDataFolder:GetChildren()) do
             if own(t) then
@@ -323,9 +301,7 @@ local function findSelectedTower()
     return nil
 end
 
--- ══════════════════════════════════════════════════════════════════════════════
---  МАППИНГ КНОПОК СПОСОБНОСТЕЙ
--- ══════════════════════════════════════════════════════════════════════════════
+
 local function isAbilityButton(obj)
     if not obj or not obj:IsA("GuiButton") then return false end
     local cur = obj
@@ -354,12 +330,6 @@ local function inferAbilityIndex(obj)
     return 1
 end
 
--- ══════════════════════════════════════════════════════════════════════════════
---  ХУК КЛИКОВ ПО АБИЛКАМ
---  Важно: клик НЕ игнорируется, если башня не найдена рядом. Используется
---  SelectedTower/LastSelectedTower, fallback — первая своя башня, ultimate
---  fallback — "Global". Это гарантирует, что клик всегда записан.
--- ══════════════════════════════════════════════════════════════════════════════
 local abilityClickHookInstalled = false
 local function installAbilityClickHook()
     if abilityClickHookInstalled then return end
@@ -385,15 +355,14 @@ local function installAbilityClickHook()
 
             if not State.Recording and not State.PlayerRecording then return end
 
-            -- НЕ игнорируем клик, даже если башня не найдена.
-            -- Fallback: TowerId = "Global", Unit = nil.
+
             local meta = tower and State.TowerMeta[tower]
             local handle = meta and meta.Handle or (towerId or "Global")
 
             local action = {
                 Type = "Ability",
                 Handle = handle,
-                TowerId = towerId,       -- может быть nil → playback попробует global
+                TowerId = towerId,       
                 Unit = unitId,
                 AbilityIndex = idx,
                 Wave = getWave(),
@@ -430,9 +399,7 @@ end
 
 task.spawn(installAbilityClickHook)
 
--- ══════════════════════════════════════════════════════════════════════════════
---  ВОЗВРАТ В ЛОББИ
--- ══════════════════════════════════════════════════════════════════════════════
+
 local function getBackButton()
     local ge = getGui() and getGui():FindFirstChild("GameEnded")
     if not ge then return nil end
@@ -494,9 +461,7 @@ local function forceReturnToLobby()
     return changed
 end
 
--- ══════════════════════════════════════════════════════════════════════════════
---  MOVEMENT (AntiKick)
--- ══════════════════════════════════════════════════════════════════════════════
+
 local MOVE_POINTS = 12
 
 local function getChar()
@@ -656,9 +621,7 @@ addConn(State.Connections, LocalPlayer.CharacterAdded:Connect(function()
     end)
 end))
 
--- ══════════════════════════════════════════════════════════════════════════════
---  WEBHOOK
--- ══════════════════════════════════════════════════════════════════════════════
+
 local function httpPost(url, body)
     local requesters = {
         { name = "syn.request",    fn = syn and syn.request },
@@ -767,9 +730,7 @@ local function sendMatchEndWebhook()
     if ok then pcall(httpPost, State.WebhookURL, enc) end
 end
 
--- ══════════════════════════════════════════════════════════════════════════════
---  PROFILES
--- ══════════════════════════════════════════════════════════════════════════════
+
 local function saveProfile(name)
     name = sanitize(name)
     if name == "" then return false, "empty" end
@@ -816,9 +777,7 @@ local function listPlayerProfiles()
     return r
 end
 
--- ══════════════════════════════════════════════════════════════════════════════
---  TOWERS
--- ══════════════════════════════════════════════════════════════════════════════
+
 local function towerModel(id, timeout)
     if not TowersFolder then return nil end
     local m
@@ -853,9 +812,7 @@ local function badTarget(mode)
     return n == "" or n == "N/A" or n == "NA" or n == "NONE"
 end
 
--- ══════════════════════════════════════════════════════════════════════════════
---  RECORDING
--- ══════════════════════════════════════════════════════════════════════════════
+
 local StopRecording
 
 local function attachTower(tower, handle)
@@ -938,7 +895,7 @@ local function attachTower(tower, handle)
         })
     end))
 
-    -- ATTACK-атрибут — fallback, если клик по кнопке не удалось перехватить
+
     addConn(State.RecorderConnections, tower.AttributeChanged:Connect(function(attr)
         if not tostring(attr):match("^ATTACK") then return end
         local prev = meta.AbilityMarkers[attr]
@@ -1049,9 +1006,7 @@ StopRecording = function(save)
     return true
 end
 
--- ══════════════════════════════════════════════════════════════════════════════
---  PLAYBACK
--- ══════════════════════════════════════════════════════════════════════════════
+
 local function resolveH(h)
     local t = State.RuntimeHandles[h]
     if t and t.Parent == TowerDataFolder then return t end
@@ -1156,11 +1111,6 @@ local function playTarget(action)
     return true
 end
 
--- ══════════════════════════════════════════════════════════════════════════════
---  ВОСПРОИЗВЕДЕНИЕ СПОСОБНОСТИ
---  Хотфикс: (1) ID берётся из атрибута "ID", fallback Name;
---            (2) всегда пробуем ремоут, затем принудительный клик по кнопке.
--- ══════════════════════════════════════════════════════════════════════════════
 local function findAbilityButtonForTower(towerId, abilityIndex)
     local gui = getGui()
     if not gui then return nil end
@@ -1193,13 +1143,9 @@ local function playAbility(action)
     if not t and action.TowerId then
         t = TowerDataFolder:FindFirstChild(tostring(action.TowerId))
     end
-
-    -- Fallback — если совсем не нашли башню, пробуем SelectedTower
     if not t then
         t = findSelectedTower()
     end
-
-    -- ID для сервера: сначала атрибут "ID", затем Name
     local towerId
     if t then
         local attrId = t:GetAttribute("ID")
@@ -1220,7 +1166,6 @@ local function playAbility(action)
 
     humanDelay(0.3, 0.15)
 
-    -- Пробуем ремоут
     local remoteOk = false
     if Remotes.Ability then
         if Remotes.Ability:IsA("RemoteEvent") then
@@ -1232,8 +1177,7 @@ local function playAbility(action)
 
     humanDelay(0.12, 0.06)
 
-    -- Принудительный клик по GUI-кнопке — ВСЕГДА пробуем, если башня найдена
-    -- или если ремоут не сработал.
+
     local shouldClick = (not remoteOk) or t ~= nil
     if shouldClick then
         local btn = findAbilityButtonForTower(towerId, idx)
@@ -1344,9 +1288,6 @@ local function startPlayback()
     return true
 end
 
--- ══════════════════════════════════════════════════════════════════════════════
---  PLAYER RECORDING (хотфикс: ОДИН ChildAdded — внутри всё: Place, Upgrade, Ability)
--- ══════════════════════════════════════════════════════════════════════════════
 local function startPlayerRec(name)
     if State.Playing then return false, "stop playback first" end
     name = sanitize(name)
@@ -1366,13 +1307,12 @@ local function startPlayerRec(name)
         table.insert(State.PlayerActions, a)
     end
 
-    -- ЕДИНСТВЕННЫЙ ChildAdded. Внутри и Place, и Upgrade, и Ability, и Boost, и Sell.
+
     addConn(State.PlayerRecordingConnections, TowerDataFolder.ChildAdded:Connect(function(t)
         task.spawn(function()
             if not waitUntil(function() return own(t) and t:GetAttribute("ID") ~= nil end, 5, 0.05) then return end
             if not State.PlayerRecording then return end
 
-            -- Place
             local placeHandle = "P" .. (#State.PlayerActions + 1)
             local cf = placeCF(t)
             if cf then
@@ -1381,7 +1321,7 @@ local function startPlayerRec(name)
                     CFrame = cframeToArray(cf), EstimatedCost = sell * 2 })
             end
 
-            -- Мета для Upgrade/Target/Boost/Ability
+
             local m = {
                 Handle = placeHandle,
                 Level = tonumber(t:GetAttribute("Upgrade")) or 0,
@@ -1499,9 +1439,7 @@ local function stopPlayerRec(save)
     return true
 end
 
--- ══════════════════════════════════════════════════════════════════════════════
---  CONFIG
--- ══════════════════════════════════════════════════════════════════════════════
+
 local function readConfig()
     if not HAS_FS or not isfile(CONFIG_FILE) then return {} end
     local ok, dec = pcall(function() return HttpService:JSONDecode(readfile(CONFIG_FILE)) end)
@@ -1578,9 +1516,7 @@ local function queueSave()
     end)
 end
 
--- ══════════════════════════════════════════════════════════════════════════════
---  MODES
--- ══════════════════════════════════════════════════════════════════════════════
+
 local ModeChapters = {
     Story = {
         "Chapter 1", "Chapter 1.5", "Chapter 2", "Chapter 3", "Chapter 4",
@@ -1687,9 +1623,6 @@ if not table.find(initChapters, State.LobbyChapter) then
     State.LobbyChapter = initChapters[1] or "Chapter 1"
 end
 
--- ══════════════════════════════════════════════════════════════════════════════
---  WINDUI
--- ══════════════════════════════════════════════════════════════════════════════
 local WindUI
 do
     local ok, r = pcall(function()
@@ -1745,9 +1678,7 @@ local function safeDropdown(t, o) if not t then return nil end; local ok, r = pc
 local function safeSlider(t, o) if not t then return nil end; local ok, r = pcall(function() return t:Slider(o) end); return ok and r or nil end
 local function safeParagraph(t, o) if not t then return nil end; local ok, r = pcall(function() return t:Paragraph(o) end); return ok and r or nil end
 
--- ══════════════════════════════════════════════════════════════════════════════
---  TABS
--- ══════════════════════════════════════════════════════════════════════════════
+
 local LobbyTab   = safeTab(Window, { Title = "Lobby", Icon = "house" })
 local MacrosTab  = safeTab(Window, { Title = "Macros", Icon = "clapperboard" })
 local PlayerTab  = safeTab(Window, { Title = "Player Actions", Icon = "user" })
@@ -1780,7 +1711,7 @@ local function refreshActionList()
     Gui.ActionSummary:SetDesc(#lines > 0 and table.concat(lines, "\n") or "No actions loaded")
 end
 
--- ═══ LOBBY ═══
+
 safeSection(LobbyTab, { Title = "Lobby Automation", Desc = "Ready and replay" })
 
 local chapterDropdown
@@ -1911,7 +1842,7 @@ task.spawn(function()
     end
 end)
 
--- ═══ WEBHOOK ═══
+
 safeSection(WebhookTab, { Title = "Discord Webhook", Desc = "Match notifications" })
 safeInput(WebhookTab, {
     Title = "Webhook URL", Placeholder = "https://discord.com/api/webhooks/...",
@@ -1935,7 +1866,7 @@ safeButton(WebhookTab, {
     end,
 })
 
--- ═══ MACROS ═══
+
 safeSection(MacrosTab, { Title = "Macro State", Desc = "Recorder + playback" })
 Gui.Status = wrapParagraph(safeParagraph(MacrosTab, { Title = "State: Idle", Desc = "Waiting" }))
 Gui.Runtime = wrapParagraph(safeParagraph(MacrosTab, { Title = "Live match", Desc = "..." }))
@@ -2120,7 +2051,7 @@ playbackToggle = safeToggle(MacrosTab, {
 })
 Gui.PlayToggle = playbackToggle
 
--- ═══ PLAYER TAB ═══
+
 safeSection(PlayerTab, { Title = "Player Action State", Desc = "Passive recorder" })
 
 local playerStatus = wrapParagraph(safeParagraph(PlayerTab, { Title = "State: Idle", Desc = "Waiting" }))
@@ -2353,7 +2284,7 @@ task.spawn(function()
     end
 end)
 
--- ═══ MISC ═══
+
 safeSection(MiscTab, { Title = "Wave & Speed", Desc = "Automation" })
 safeToggle(MiscTab, {
     Title = "Auto Skip Waves", Value = State.AutoSkip,
@@ -2397,9 +2328,7 @@ if State.PlaybackEnabled and #State.Actions > 0 then
     end)
 end
 
--- ══════════════════════════════════════════════════════════════════════════════
---  AUTOMATION LOOP
--- ══════════════════════════════════════════════════════════════════════════════
+
 State.AutomationSession = State.AutomationSession + 1
 local automationSession = State.AutomationSession
 
@@ -2515,9 +2444,7 @@ task.spawn(function()
     end
 end)
 
--- ══════════════════════════════════════════════════════════════════════════════
---  UI UPDATE LOOP
--- ══════════════════════════════════════════════════════════════════════════════
+
 State.UISession = State.UISession + 1
 local uiSession = State.UISession
 
@@ -2532,9 +2459,7 @@ task.spawn(function()
     end
 end)
 
--- ══════════════════════════════════════════════════════════════════════════════
---  DESTROY
--- ══════════════════════════════════════════════════════════════════════════════
+
 function Hub.Destroy()
     State.Running = false
     State.MasterSession         = State.MasterSession + 1
