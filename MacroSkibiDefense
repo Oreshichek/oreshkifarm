@@ -727,8 +727,7 @@ end
 local function startRecording(profileName)
     if State.Playing then return false, "stop playback first" end
     if not matchReady() then return false, "enter match first" end
-    profileName = sanitize(profileName)
-    if profileName == "" then return false, "empty name" end
+    profileName = sanitize(profileName); if profileName == "" then return false, "empty name" end
     disconnectAll(State.RecorderConnections)
     State.Actions = {}; State.ProfileName = profileName; State.ProfileVersion = 4
     State.RecordStartedAt = os.clock(); State.NextHandle = 1
@@ -789,43 +788,29 @@ local function findRuntime(action)
     return nil
 end
 
--- ИСПРАВЛЕННЫЙ playPlace
 local function playPlace(action)
     local cf = arrayToCFrame(action.CFrame)
     if not cf then return true end
     local ex = findRuntime(action)
-    if ex then
-        State.RuntimeHandles[action.Handle] = ex
-        State.UsedRuntimeTowers[ex] = true
-        return true
-    end
+    if ex then State.RuntimeHandles[action.Handle] = ex; State.UsedRuntimeTowers[ex] = true; return true end
     local cost = tonumber(action.EstimatedCost) or 0
     local deadline = os.clock() + 180
-    
     while State.Playing and os.clock() < deadline and not gameEnded() do
         ex = findRuntime(action)
-        if ex then
-            State.RuntimeHandles[action.Handle] = ex
-            State.UsedRuntimeTowers[ex] = true
-            return true
-        end
-        
+        if ex then State.RuntimeHandles[action.Handle] = ex; State.UsedRuntimeTowers[ex] = true; return true end
         if getMoney() >= cost then
             if Remotes.Place then
                 local jitter = Vector3.new(rand(-0.3, 0.3), 0, rand(-0.3, 0.3))
                 pcall(function() Remotes.Place:FireServer(action.Unit, cf + jitter, false) end)
-                
-                -- Ждем появления башни максимум 1 секунду
-                local success = waitUntil(function() return findRuntime(action) end, 1, 0.05)
+                local success = waitUntil(function() return findRuntime(action) end, 1.5, 0.05)
                 if success then
                     local tower = findRuntime(action)
-                    State.RuntimeHandles[action.Handle] = tower
-                    State.UsedRuntimeTowers[tower] = true
+                    State.RuntimeHandles[action.Handle] = tower; State.UsedRuntimeTowers[tower] = true
                     return true
                 end
             end
         end
-        humanDelay(0.2, 0.1) -- Если не поставилась, ждем 0.2с и пробуем снова
+        humanDelay(1.0, 0.2)
     end
     return true
 end
@@ -894,7 +879,6 @@ local function findAbilityButtonForTower(towerId, abilityIndex)
     return candidates[1].btn
 end
 
--- ИСПРАВЛЕННЫЙ playAbility
 local function playAbility(action)
     local t = resolveH(action.Handle)
     if not t and action.Unit then
@@ -904,13 +888,6 @@ local function playAbility(action)
     end
     if not t and action.TowerId then
         t = TowerDataFolder:FindFirstChild(tostring(action.TowerId))
-    end
-    
-    -- Фоллбэк: если не нашли по ID, ищем ЛЮБУЮ свою башню, которая стоит на карте
-    if not t and TowerDataFolder then
-        for _, child in ipairs(TowerDataFolder:GetChildren()) do
-            if own(child) then t = child; break end
-        end
     end
 
     if not t then return true, "no tower for ability" end
@@ -959,7 +936,6 @@ local function playBoost(action)
     humanDelay(0.15, 0.05); return true
 end
 
--- ИСПРАВЛЕННЫЙ waitGate
 local function waitGate(action, startedAt)
     local rt = tonumber(action.RecordedAt) or 0
     local cost = tonumber(action.EstimatedCost) or 0
@@ -976,7 +952,6 @@ local function waitGate(action, startedAt)
         if State.PlaybackMode == "Money" then return hasM end
         if wv > 0 and getWave() > wv then hasT = true end
         
-        -- Ждем, пока появятся деньги
         if cost > 0 and getMoney() < cost then return false end
         
         return hasW and hasT and hasM
@@ -1126,7 +1101,6 @@ local function queueSave()
     saveQueued = true
     task.delay(0.3, function() saveQueued = false; saveConfig() end)
 end
-
 local ModeChapters = {
     Story = { "Chapter 1", "Chapter 1.5", "Chapter 2", "Chapter 3", "Chapter 4", "Chapter 5", "Chapter 6", "Chapter 7", "Chapter 8", "Chapter 9" },
     Multiverse = { "Multiverse Chapter 1", "Multiverse Chapter 2", "Multiverse Chapter 3" },
@@ -1589,4 +1563,4 @@ Hub.SetMoving = setMoving; Hub.SendWebhook = sendWebhook; Hub.SendMatchEndWebhoo
 refreshActionList()
 setStatus("Idle", State.ProfileName ~= "" and ("Loaded " .. State.ProfileName) or "Select a macro")
 saveConfig()
-print("[Hub] Skibidi Defense Hub v3.4 (Astra 6) loaded. RightShift toggles UI.") 
+print("[Hub] Skibidi Defense Hub loaded. RightShift toggles UI.") 
