@@ -1045,7 +1045,6 @@ local function stopPlayerRec(save)
     end
     return true
 end
-
 local function readConfig()
     if not HAS_FS or not isfile(CONFIG_FILE) then return {} end
     local ok, dec = pcall(function() return HttpService:JSONDecode(readfile(CONFIG_FILE)) end)
@@ -1101,6 +1100,7 @@ local function queueSave()
     saveQueued = true
     task.delay(0.3, function() saveQueued = false; saveConfig() end)
 end
+
 local ModeChapters = {
     Story = { "Chapter 1", "Chapter 1.5", "Chapter 2", "Chapter 3", "Chapter 4", "Chapter 5", "Chapter 6", "Chapter 7", "Chapter 8", "Chapter 9" },
     Multiverse = { "Multiverse Chapter 1", "Multiverse Chapter 2", "Multiverse Chapter 3" },
@@ -1563,4 +1563,3 @@ Hub.SetMoving = setMoving; Hub.SendWebhook = sendWebhook; Hub.SendMatchEndWebhoo
 refreshActionList()
 setStatus("Idle", State.ProfileName ~= "" and ("Loaded " .. State.ProfileName) or "Select a macro")
 saveConfig()
-print("[Hub] Skibidi Defense Hub loaded. RightShift toggles UI.") 
