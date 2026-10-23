@@ -367,7 +367,7 @@ local function installAbilityClickHook()
             local action = {
                 Type = "Ability",
                 Handle = handle,
-                TowerId = towerId,
+                TowerId = towerId,       
                 Unit = unitId,
                 AbilityIndex = idx,
                 Wave = getWave(),
@@ -1659,7 +1659,7 @@ local Window
 do
     local ok, r = pcall(function()
         return WindUI:CreateWindow({
-            Title = "Skibidi Defense Hub", Author = "Made By oreshick :3    ",
+            Title = "Skibidi Defense Hub", Author = "",
             Folder = "SkibidiDefenseHub", Icon = "clapperboard", Theme = "Dark",
             Size = UDim2.fromOffset(620, 480), Transparent = true, HideSearchBar = true,
             NewElements = true, ToggleKey = Enum.KeyCode.RightShift,
@@ -2515,7 +2515,7 @@ function Hub.Destroy()
     if Environment.SkibidiDefenseHub == Hub then
         Environment.SkibidiDefenseHub = nil
     end
-endа
+end
 
 Hub.State                 = State
 Hub.StartRecording        = startRecording
@@ -2534,4 +2534,4 @@ Hub.SendMatchEndWebhook   = sendMatchEndWebhook
 refreshActionList()
 setStatus("Idle", State.ProfileName ~= "" and ("Loaded " .. State.ProfileName) or "Select a macro")
 saveConfig()
-print("[Hub] Skibidi Defense Hub loaded. RightShift toggles UI.")
+print("[Hub] Skibidi Defense Hub loaded. RightShift toggles UI.") 
