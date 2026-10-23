@@ -367,7 +367,7 @@ local function installAbilityClickHook()
             local action = {
                 Type = "Ability",
                 Handle = handle,
-                TowerId = towerId,       
+                TowerId = towerId,
                 Unit = unitId,
                 AbilityIndex = idx,
                 Wave = getWave(),
@@ -700,7 +700,6 @@ local function sendWebhook(title, desc, color)
             title = tostring(title or "Hub"),
             description = tostring(desc or ""),
             color = tonumber(color) or 5793266,
-            footer = { text = "Made By oreshick :3" },
             timestamp = DateTime.now():ToIsoDate(),
         }},
     }
@@ -735,7 +734,6 @@ local function sendMatchEndWebhook()
                     State.MatchesCompleted, State.MatchesBeforeLobby),
                   inline = false },
             },
-            footer = { text = "Made By oreshick :3" },
             timestamp = DateTime.now():ToIsoDate(),
         }},
     }
@@ -1661,7 +1659,7 @@ local Window
 do
     local ok, r = pcall(function()
         return WindUI:CreateWindow({
-            Title = "Skibidi Defense Hub", Author = "Made By oreshick :3",
+            Title = "Skibidi Defense Hub", Author = "Made By oreshick :3    ",
             Folder = "SkibidiDefenseHub", Icon = "clapperboard", Theme = "Dark",
             Size = UDim2.fromOffset(620, 480), Transparent = true, HideSearchBar = true,
             NewElements = true, ToggleKey = Enum.KeyCode.RightShift,
@@ -2517,7 +2515,7 @@ function Hub.Destroy()
     if Environment.SkibidiDefenseHub == Hub then
         Environment.SkibidiDefenseHub = nil
     end
-end
+endа
 
 Hub.State                 = State
 Hub.StartRecording        = startRecording
@@ -2536,4 +2534,4 @@ Hub.SendMatchEndWebhook   = sendMatchEndWebhook
 refreshActionList()
 setStatus("Idle", State.ProfileName ~= "" and ("Loaded " .. State.ProfileName) or "Select a macro")
 saveConfig()
-print("[Hub] Skibidi Defense Hub v3.4 (Astra 6) loaded. RightShift toggles UI.") 
+print("[Hub] Skibidi Defense Hub loaded. RightShift toggles UI.")
