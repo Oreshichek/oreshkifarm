@@ -9,7 +9,7 @@ local UserInputService   = game:GetService("UserInputService")
 
 local LocalPlayer = Players.LocalPlayer
 
--- [FIX 1] getgenv() есть не в каждой среде -> иначе "attempt to call a nil value"
+
 local Environment = (type(getgenv) == "function" and getgenv()) or _G
 
 do
@@ -22,8 +22,7 @@ end
 local Hub = {}
 Environment.SkibidiDefenseHub = Hub
 
--- [FIX 2] Безопасные обёртки: любой сбой в потоке/отложенной задаче
--- больше не вылетает в консоль как непойманная ошибка.
+
 local function safeCall(tag, fn, ...)
     local ok, err = pcall(fn, ...)
     if not ok then
