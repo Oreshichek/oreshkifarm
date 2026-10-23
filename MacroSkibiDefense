@@ -108,6 +108,7 @@ local State = {
     LastCountedJobId = "",
     PendingLobbyReturn = false,
     JoinRequested = false,
+    LastLobbyJobId = "",
 
     WebhookEnabled = false,
     WebhookURL = "",
@@ -134,6 +135,7 @@ local State = {
     PlayerActions = {},
     PlayerRecordingProfileName = "",
     PlayerRecordingConnections = {},
+    PlayerTrackedTowers = setmetatable({}, { __mode = "k" }),
 }
 
 local LOBBY_PLACE_ID = 14279693118
@@ -279,9 +281,6 @@ local function own(t)
 end
 
 local function findSelectedTower()
-    if State.LastSelectedTower and State.LastSelectedTower.Parent == TowerDataFolder then
-        return State.LastSelectedTower
-    end
     if TowerDataFolder then
         for _, t in ipairs(TowerDataFolder:GetChildren()) do
             if own(t) and (t:GetAttribute("Selected") == true or t:GetAttribute("IsSelected") == true) then
@@ -289,6 +288,10 @@ local function findSelectedTower()
                 return t
             end
         end
+    end
+
+    if State.LastSelectedTower and State.LastSelectedTower.Parent == TowerDataFolder then
+        return State.LastSelectedTower
     end
 
     if TowerDataFolder then
@@ -330,10 +333,11 @@ local function inferAbilityIndex(obj)
     return 1
 end
 
-local abilityClickHookInstalled = false
+local lastHookedGui = nil
 local function installAbilityClickHook()
-    if abilityClickHookInstalled then return end
-    abilityClickHookInstalled = true
+    local gui = getGui()
+    if gui == lastHookedGui then return end
+    lastHookedGui = gui
 
     local function hookButton(btn)
         if not isAbilityButton(btn) then return end
@@ -350,6 +354,7 @@ local function installAbilityClickHook()
             local towerId = tower and tostring(tower.Name) or nil
             local unitId  = tower and tostring(tower:GetAttribute("ID")) or nil
 
+            local prevAbilityClickAt = State.PendingAbilityClickAt
             State.PendingAbilityClickAt = os.clock()
             State.PendingAbilityIndex = idx
 
@@ -369,18 +374,18 @@ local function installAbilityClickHook()
                 RecordedAt = os.clock() - (State.RecordStartedAt or 0),
             }
 
-            if State.Recording then
+            if State.Recording and meta == nil then
                 local last = State.Actions[#State.Actions]
                 if last and last.Type == "Ability"
                     and last.Marker == tostring(btn)
-                    and os.clock() - State.PendingAbilityClickAt <= 0.35 then
+                    and State.PendingAbilityClickAt - prevAbilityClickAt <= 0.35 then
                     last.AbilityIndex = idx
                 else
                     action.Marker = tostring(btn)
                     table.insert(State.Actions, action)
                 end
             end
-            if State.PlayerRecording then
+            if State.PlayerRecording and not State.PlayerTrackedTowers[tower] then
                 local action2 = {}
                 for k, v in pairs(action) do action2[k] = v end
                 action2.RecordedAt = os.clock() - State.PlayerRecordingStartedAt
@@ -390,14 +395,18 @@ local function installAbilityClickHook()
         addConn(State.Connections, conn)
     end
 
-    local gui = getGui()
     if gui then
         for _, o in ipairs(gui:GetDescendants()) do hookButton(o) end
         addConn(State.Connections, gui.DescendantAdded:Connect(hookButton))
     end
 end
 
-task.spawn(installAbilityClickHook)
+task.spawn(function()
+    while State.Running do
+        installAbilityClickHook()
+        humanDelay(0.5, 0.1)
+    end
+end)
 
 
 local function getBackButton()
@@ -436,6 +445,10 @@ local function tryFireBackButton(btn)
     end
     return false
 end
+
+local saveConfig
+local newProfileName
+local newPlayerName
 
 local function forceReturnToLobby()
     if not State.PendingLobbyReturn then return false end
@@ -981,16 +994,17 @@ local function startRecording(profileName)
         end)
     end))
 
-    local ge = getGui() and getGui():FindFirstChild("GameEnded")
-    if ge then
-        addConn(State.RecorderConnections, ge:GetPropertyChangedSignal("Enabled"):Connect(function()
-            if State.Recording and ge.Enabled then
+    task.spawn(function()
+        while State.Recording and State.Running do
+            if gameEnded() then
                 task.defer(function()
                     if State.Recording then StopRecording(true) end
                 end)
+                return
             end
-        end))
-    end
+            humanDelay(0.25, 0.05)
+        end
+    end)
     return true
 end
 
@@ -1178,7 +1192,7 @@ local function playAbility(action)
     humanDelay(0.12, 0.06)
 
 
-    local shouldClick = (not remoteOk) or t ~= nil
+    local shouldClick = not remoteOk
     if shouldClick then
         local btn = findAbilityButtonForTower(towerId, idx)
         if btn then
@@ -1259,10 +1273,12 @@ local function startPlayback()
 
     task.spawn(function()
         local startedAt = os.clock()
+        local waveWaitStart = os.clock()
         while State.Playing and session == State.PlaybackSession
             and not gameEnded() and getWave() < 1 do
             startedAt = os.clock()
             humanDelay(0.06, 0.02)
+            if os.clock() - waveWaitStart > 60 then break end
         end
 
         for i, a in ipairs(State.Actions) do
@@ -1298,6 +1314,7 @@ local function startPlayerRec(name)
     State.PlayerRecordingStartedAt = os.clock()
     State.PlayerRecording = true
     State.PlayerRecordingConnections = {}
+    State.PlayerTrackedTowers = setmetatable({}, { __mode = "k" })
 
     local function stamp() return os.clock() - State.PlayerRecordingStartedAt end
     local function push(a)
@@ -1312,6 +1329,7 @@ local function startPlayerRec(name)
         task.spawn(function()
             if not waitUntil(function() return own(t) and t:GetAttribute("ID") ~= nil end, 5, 0.05) then return end
             if not State.PlayerRecording then return end
+            State.PlayerTrackedTowers[t] = true
 
             local placeHandle = "P" .. (#State.PlayerActions + 1)
             local cf = placeCF(t)
@@ -1388,6 +1406,11 @@ local function startPlayerRec(name)
                     Unit = attrId and tostring(attrId) or tostring(t:GetAttribute("ID")),
                     AbilityIndex = idx })
             end)
+            addConn(State.PlayerRecordingConnections, up)
+            addConn(State.PlayerRecordingConnections, lv)
+            addConn(State.PlayerRecordingConnections, tg)
+            addConn(State.PlayerRecordingConnections, bs)
+            addConn(State.PlayerRecordingConnections, ab)
             rmConn = TowerDataFolder.ChildRemoved:Connect(function(c)
                 if c ~= t or not State.PlayerRecording then return end
                 push({ Type = "Sell", Handle = m.Handle, Unit = tostring(t:GetAttribute("ID")) })
@@ -1485,7 +1508,7 @@ end
 applyConfig()
 
 local saveQueued = false
-local function saveConfig()
+saveConfig = function()
     if not HAS_FS then return end
     local p = {
         AutoReplay = State.AutoReplay, AutoReady = State.AutoReady,
@@ -1503,6 +1526,8 @@ local function saveConfig()
         WebhookMatchEnd = State.WebhookMatchEnd,
         PlaybackEnabled = State.PlaybackEnabled, Speed = State.Speed,
         PlaybackMode = State.PlaybackMode, SelectedProfile = State.ProfileName,
+        NewProfileName = newProfileName,
+        NewPlayerName = newPlayerName,
     }
     pcall(function() writefile(CONFIG_FILE, HttpService:JSONEncode(p)) end)
 end
@@ -1804,10 +1829,15 @@ safeToggle(LobbyTab, {
 task.spawn(function()
     while State.Running do
         if game.PlaceId == LOBBY_PLACE_ID and State.AutoJoinMap
-            and not State.JoinRequested and State.LobbyChapter ~= "" then
-            refreshObjects()
-            if Remotes.CreateServer then
-                State.JoinRequested = true
+            and State.LobbyChapter ~= "" then
+            if game.JobId ~= State.LastLobbyJobId then
+                State.LastLobbyJobId = game.JobId
+                State.JoinRequested = false
+            end
+            if not State.JoinRequested then
+                refreshObjects()
+                if Remotes.CreateServer then
+                    State.JoinRequested = true
                 task.spawn(function()
                     local ok, res = pcall(function() return Remotes.CreateServer:InvokeServer(State.LobbyChapter) end)
                     if not ok then
@@ -1836,6 +1866,7 @@ task.spawn(function()
                         notify("Auto Join failed", tostring(serr))
                     end
                 end)
+            end
             end
         end
         humanDelay(0.9, 0.3)
@@ -1872,7 +1903,7 @@ Gui.Status = wrapParagraph(safeParagraph(MacrosTab, { Title = "State: Idle", Des
 Gui.Runtime = wrapParagraph(safeParagraph(MacrosTab, { Title = "Live match", Desc = "..." }))
 Gui.ActionSummary = wrapParagraph(safeParagraph(MacrosTab, { Title = "Recorded actions: 0", Desc = "None" }))
 
-local newProfileName = Config.NewProfileName or ""
+newProfileName = Config.NewProfileName or ""
 safeInput(MacrosTab, {
     Title = "Create Macro", Placeholder = "example: map1_solo", Value = newProfileName,
     Callback = function(v) newProfileName = sanitize(v); queueSave() end,
@@ -2079,9 +2110,9 @@ local function refreshPlayerList()
     playerSummary:SetDesc(#lines > 0 and table.concat(lines, "\n") or "None")
 end
 
-local newPlayerName = ""
+newPlayerName = Config.NewPlayerName or ""
 safeInput(PlayerTab, {
-    Title = "Create Player Macro", Placeholder = "example: my_player_run", Value = "",
+    Title = "Create Player Macro", Placeholder = "example: my_player_run", Value = newPlayerName,
     Callback = function(v) newPlayerName = sanitize(v) end,
 })
 
@@ -2177,6 +2208,7 @@ playerPlayToggle = safeToggle(PlayerTab, {
                 setPlayerToggle(playerRecToggle, false)
                 stopPlayerRec(true)
             end
+            if State.Playing then stopPlayback("Player playback began") end
             local profileName = playerDropdown and playerDropdown.Value or ""
             local path = playerProfilePath(profileName)
             if HAS_FS and isfile(path) then
