@@ -1375,6 +1375,7 @@ local function startPlayback()
             elseif a.Type == "BoostLink" then ok = playBoost(a)
             end
             if not ok then break end
+            if math.random() < 0.12 then humanDelay(0.9, 0.7) end
         end
 
         if session == State.PlaybackSession then
@@ -1980,14 +1981,17 @@ safeToggle(LobbyTab, {
 })
 
 task.spawn(function()
+    local nextJoinAt = 0
     while State.Running do
+        local now = os.clock()
         if game.PlaceId == LOBBY_PLACE_ID and State.AutoJoinMap
             and State.LobbyChapter ~= "" then
             if game.JobId ~= State.LastLobbyJobId then
                 State.LastLobbyJobId = game.JobId
                 State.JoinRequested = false
+                nextJoinAt = now + rand(8, 20)
             end
-            if not State.JoinRequested then
+            if not State.JoinRequested and now >= nextJoinAt then
                 refreshObjects()
                 if Remotes.CreateServer then
                     State.JoinRequested = true
@@ -2701,4 +2705,4 @@ Hub.SendMatchEndWebhook   = sendMatchEndWebhook
 refreshActionList()
 setStatus("Idle", State.ProfileName ~= "" and ("Loaded " .. State.ProfileName) or "Select a macro")
 saveConfig()
-print("[Hub] Skibidi Defense Hub loaded. RightShift toggles UI.") 
+print("[Hub] Skibidi Defense Hub | Author: oreshik :3 | loaded. RightShift toggles UI.") 
