@@ -466,9 +466,12 @@ local function tryFireBackButton(btn)
     if type(btn.Activate) == "function" then
         if pcall(function() btn:Activate() end) then return true end
     end
-    if type(VirtualUser) == "table" and type(VirtualUser.MouseButton1Click) == "function" then
-        local pos = btn.AbsolutePosition + btn.AbsoluteSize * 0.5
-        if pcall(function() VirtualUser:MouseButton1Click(pos.X, pos.Y) end) then return true end
+    if type(VirtualUser) == "table" then
+        pcall(function() VirtualUser:CaptureController() end)
+        if type(VirtualUser.MouseButton1Click) == "function" then
+            local pos = btn.AbsolutePosition + btn.AbsoluteSize * 0.5
+            if pcall(function() VirtualUser:MouseButton1Click(pos.X, pos.Y) end) then return true end
+        end
     end
     return false
 end
@@ -480,7 +483,7 @@ local newPlayerName
 local function forceReturnToLobby()
     if not State.PendingLobbyReturn then return false end
     local startJob = game.JobId
-    local deadline = os.clock() + 35
+    local deadline = os.clock() + 60
 
     while State.Running and State.PendingLobbyReturn
         and os.clock() < deadline and game.JobId == startJob do
@@ -488,7 +491,7 @@ local function forceReturnToLobby()
         if btn then
             tryFireBackButton(btn)
         end
-        humanDelay(0.6, 0.2)
+        humanDelay(0.25, 0.08)
     end
 
     local changed = game.JobId ~= startJob
@@ -497,6 +500,13 @@ local function forceReturnToLobby()
         State.MatchesCompleted = 0
         State.LastCountedJobId = ""
         saveConfig()
+    else
+        State.PendingLobbyReturn = false
+        warn("[Hub] Return to lobby failed; falling back to replay")
+        refreshObjects()
+        if Remotes.Replay then
+            pcall(function() Remotes.Replay:FireServer() end)
+        end
     end
     return changed
 end
