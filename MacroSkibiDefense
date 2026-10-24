@@ -419,6 +419,18 @@ local function getBackButton()
     if not gui then return nil end
     local ge = gui:FindFirstChild("GameEnded")
     local root = ge or gui
+    local function strongMatch(s)
+        s = tostring(s or ""):lower()
+        return s:find("return", 1, true) or s:find("to lobby", 1, true)
+    end
+    for _, d in ipairs(root:GetDescendants()) do
+        if d:IsA("GuiButton") and strongMatch(d.Text) then return d end
+    end
+    for _, d in ipairs(root:GetDescendants()) do
+        if d:IsA("TextLabel") and strongMatch(d.Text) and d.Parent and d.Parent:IsA("GuiButton") then
+            return d.Parent
+        end
+    end
     for _, d in ipairs(root:GetDescendants()) do
         if d:IsA("GuiButton") and isBackLabel(d.Name) then return d end
     end
@@ -453,12 +465,14 @@ end
 
 local function tryFireBackButton(btn)
     if not btn or not btn.Parent then return false end
+    local tried = false
     local signals = { "MouseButton1Click", "Activated", "MouseButton1Down", "MouseButton1Up" }
     for _, sname in ipairs(signals) do
         local sig = btn[sname]
         if sig then
             if type(firesignal) == "function" then
-                if pcall(firesignal, sig) then return true end
+                pcall(firesignal, sig)
+                tried = true
             end
             if type(getconnections) == "function" then
                 local ok, conns = pcall(getconnections, sig)
@@ -469,22 +483,35 @@ local function tryFireBackButton(btn)
                             elseif type(c.Function) == "function" then c.Function() end
                         end)
                     end
-                    return true
+                    tried = true
                 end
             end
         end
     end
     if type(btn.Activate) == "function" then
-        if pcall(function() btn:Activate() end) then return true end
+        pcall(function() btn:Activate() end)
+        tried = true
     end
+    local pos = btn.AbsolutePosition + btn.AbsoluteSize * 0.5
     if type(VirtualUser) == "table" then
         pcall(function() VirtualUser:CaptureController() end)
+        if type(VirtualUser.MoveMouse) == "function" then
+            pcall(function() VirtualUser:MoveMouse(pos.X, pos.Y) end)
+        end
         if type(VirtualUser.MouseButton1Click) == "function" then
-            local pos = btn.AbsolutePosition + btn.AbsoluteSize * 0.5
-            if pcall(function() VirtualUser:MouseButton1Click(pos.X, pos.Y) end) then return true end
+            pcall(function() VirtualUser:MouseButton1Click(pos.X, pos.Y) end)
+            tried = true
         end
     end
-    return false
+    if type(mousemoveabs) == "function" then
+        pcall(mousemoveabs, pos.X, pos.Y)
+        tried = true
+    end
+    if type(mouse1click) == "function" then
+        pcall(mouse1click)
+        tried = true
+    end
+    return tried
 end
 
 local saveConfig
