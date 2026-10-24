@@ -2564,7 +2564,6 @@ task.spawn(function()
         end
 
         if State.AutoReady and not ended and Remotes.Ready
-            and not mr
             and not State.Playing
             and now - lastReady >= 1 then
             lastReady = now
