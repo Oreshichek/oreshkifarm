@@ -8,9 +8,7 @@ local PathfindingService = game:GetService("PathfindingService")
 local UserInputService   = game:GetService("UserInputService")
 
 local LocalPlayer = Players.LocalPlayer
-
-
-local Environment = (type(getgenv) == "function" and getgenv()) or _G
+local Environment = getgenv()
 
 do
     local prev = Environment.SkibidiDefenseHub
@@ -21,59 +19,6 @@ end
 
 local Hub = {}
 Environment.SkibidiDefenseHub = Hub
-
-
-local function safeCall(tag, fn, ...)
-    local ok, err = pcall(fn, ...)
-    if not ok then
-        warn(string.format("[Hub] %s -> %s", tostring(tag), tostring(err)))
-    end
-    return ok, err
-end
-
-local function safeSpawn(tag, fn)
-    return task.spawn(function(...)
-        local ok, err = pcall(fn, ...)
-        if not ok then
-            warn(string.format("[Hub] %s -> %s", tostring(tag), tostring(err)))
-        end
-    end)
-end
-
-local function safeDelay(tag, delayTime, fn)
-    return task.delay(delayTime, function(...)
-        local ok, err = pcall(fn, ...)
-        if not ok then
-            warn(string.format("[Hub] %s -> %s", tostring(tag), tostring(err)))
-        end
-    end)
-end
-
-local function safeDefer(tag, fn)
-    return task.defer(function(...)
-        local ok, err = pcall(fn, ...)
-        if not ok then
-            warn(string.format("[Hub] %s -> %s", tostring(tag), tostring(err)))
-        end
-    end)
-end
-
--- [FIX 8] буфер обмена может отсутствовать/падать
-local function readClipboard()
-    if type(getclipboard) ~= "function" then return "" end
-    local ok, v = pcall(getclipboard)
-    if ok and type(v) == "string" then return v end
-    return ""
-end
-
--- [FIX 9] приведение к целому для дропдаунов/слайдеров
-local function toInt(v, def, minV, maxV)
-    local n = tonumber(v) or def
-    n = math.floor(n + 0.5)
-    if minV and n < minV then n = minV end
-    if maxV and n > maxV then n = maxV end
-    return n
-end
 
 
 local MACRO_FOLDER = "SkibidiDefense_Macros"
@@ -456,7 +401,7 @@ local function installAbilityClickHook()
     end
 end
 
-safeSpawn("ability hook", function()
+task.spawn(function()
     while State.Running do
         installAbilityClickHook()
         humanDelay(0.5, 0.1)
@@ -468,26 +413,44 @@ local function getBackButton()
     local ge = getGui() and getGui():FindFirstChild("GameEnded")
     if not ge then return nil end
     local fr = ge:FindFirstChild("Frame")
-    if not fr then return nil end
-    local btn = fr:FindFirstChild("back")
-    if not btn or not btn:IsA("GuiButton") then return nil end
-    return btn
+    if fr then
+        for _, d in ipairs(fr:GetChildren()) do
+            if d:IsA("GuiButton") and tostring(d.Name):lower():find("back", 1, true) then
+                return d
+            end
+        end
+    end
+    for _, d in ipairs(ge:GetDescendants()) do
+        if d:IsA("GuiButton") then
+            local n = tostring(d.Name):lower()
+            if n:find("back", 1, true) or n:find("lobby", 1, true) or n:find("leave", 1, true) then
+                return d
+            end
+        end
+    end
+    return nil
 end
 
 local function tryFireBackButton(btn)
     if not btn or not btn.Parent then return false end
-    if type(firesignal) == "function" then
-        if pcall(firesignal, btn.MouseButton1Click) then return true end
-    end
-    if type(getconnections) == "function" then
-        local ok, conns = pcall(getconnections, btn.MouseButton1Click)
-        if ok and type(conns) == "table" then
-            for _, c in ipairs(conns) do
-                local fired = pcall(function()
-                    if type(c.Fire) == "function" then c:Fire()
-                    elseif type(c.Function) == "function" then c.Function() end
-                end)
-                if fired then return true end
+    local signals = { "MouseButton1Click", "Activated" }
+    for _, sname in ipairs(signals) do
+        local sig = btn[sname]
+        if sig then
+            if type(firesignal) == "function" then
+                if pcall(firesignal, sig) then return true end
+            end
+            if type(getconnections) == "function" then
+                local ok, conns = pcall(getconnections, sig)
+                if ok and type(conns) == "table" and #conns > 0 then
+                    for _, c in ipairs(conns) do
+                        pcall(function()
+                            if type(c.Fire) == "function" then c:Fire()
+                            elseif type(c.Function) == "function" then c.Function() end
+                        end)
+                    end
+                    return true
+                end
             end
         end
     end
@@ -508,15 +471,15 @@ local newPlayerName
 local function forceReturnToLobby()
     if not State.PendingLobbyReturn then return false end
     local startJob = game.JobId
-    local deadline = os.clock() + 20
+    local deadline = os.clock() + 35
 
     while State.Running and State.PendingLobbyReturn
         and os.clock() < deadline and game.JobId == startJob do
         local btn = getBackButton()
-        if btn and btn.Visible then
+        if btn then
             tryFireBackButton(btn)
         end
-        humanDelay(0.5, 0.25)
+        humanDelay(0.6, 0.2)
     end
 
     local changed = game.JobId ~= startJob
@@ -674,7 +637,7 @@ local function setMoving(on)
     stopMove()
     State.MovingAround = on == true
     if State.MovingAround then
-        safeSpawn("move loop", function() moveLoop(s) end)
+        task.spawn(function() moveLoop(s) end)
     end
 end
 
@@ -682,44 +645,26 @@ addConn(State.Connections, LocalPlayer.CharacterAdded:Connect(function()
     if not State.MovingAround then return end
     State.MovingSession = State.MovingSession + 1
     local s = State.MovingSession
-    safeDelay("resume move loop", 0.6, function()
+    task.delay(0.6, function()
         if State.MovingAround and s == State.MovingSession then
-            safeSpawn("move loop", function() moveLoop(s) end)
+            task.spawn(function() moveLoop(s) end)
         end
     end)
 end))
 
 
--- [FIX 7] Сборщик request-функций: обращение к http.request, когда http — функция,
--- давало "attempt to index a function value"
-local function collectRequesters()
-    local list = {}
-    local function add(name, fn)
-        if type(fn) == "function" then
-            list[#list + 1] = { name = name, fn = fn }
-        end
-    end
-
-    add("syn.request", type(syn) == "table" and syn.request or nil)
-    add("http.request", type(http) == "table" and http.request or nil)
-    add("http_request", http_request)
-    add("request", request)
-    add("fluxus.request", type(fluxus) == "table" and fluxus.request or nil)
-    add("krnl.request", type(krnl) == "table" and krnl.request or nil)
-    if type(game) == "table" or typeof(game) == "Instance" then
-        pcall(function()
-            if type(game.HttpPost) == "function" then
-                add("game:HttpPost", function(opts)
-                    return game:HttpPost(opts.Url, opts.Body, "application/json")
-                end)
-            end
-        end)
-    end
-    return list
-end
-
 local function httpPost(url, body)
-    local requesters = collectRequesters()
+    local requesters = {
+        { name = "syn.request",    fn = syn and syn.request },
+        { name = "http.request",   fn = http and http.request },
+        { name = "http_request",   fn = http_request },
+        { name = "request",        fn = request },
+        { name = "fluxus.request", fn = fluxus and fluxus.request },
+        { name = "krnl.request",   fn = krnl and krnl.request },
+        { name = "game:HttpPost",  fn = game and game.HttpPost and function(opts)
+            return game:HttpPost(opts.Url, opts.Body, "application/json")
+        end },
+    }
 
     for _, req in ipairs(requesters) do
         if type(req.fn) == "function" then
@@ -887,6 +832,10 @@ local function placeCF(t)
         local ok, pv = pcall(m.GetPivot, m)
         if ok then return pv end
     end
+    if t and t:IsA("Model") then
+        local ok, pv = pcall(t.GetPivot, t)
+        if ok then return pv end
+    end
     return nil
 end
 
@@ -965,8 +914,6 @@ local function attachTower(tower, handle)
         if not State.Recording or ns == nil
             or tostring(ns) == "" or tostring(ns) == "0"
             or tostring(ns) == tostring(os_) then return end
-        -- [FIX 6] папка может исчезнуть после телепорта
-        if not TowerDataFolder or not TowerDataFolder.Parent then return end
         local srcTower = TowerDataFolder:FindFirstChild(tostring(ns))
         if not srcTower then return end
         local srcMeta = State.TowerMeta[srcTower]
@@ -1035,7 +982,7 @@ local function startRecording(profileName)
     State.RecordSession = State.RecordSession + 1
 
     addConn(State.RecorderConnections, TowerDataFolder.ChildAdded:Connect(function(t)
-        safeSpawn("record tower", function()
+        task.spawn(function()
             if not waitUntil(function() return own(t) and t:GetAttribute("ID") ~= nil end, 5, 0.05) then return end
             if not State.Recording then return end
             local h = "T" .. State.NextHandle
@@ -1057,7 +1004,7 @@ local function startRecording(profileName)
     addConn(State.RecorderConnections, TowerDataFolder.ChildRemoved:Connect(function(t)
         local m = State.TowerMeta[t]
         if not m then return end
-        safeDelay("record sell", 0.15, function()
+        task.delay(0.15, function()
             if State.Recording and not gameEnded() then
                 table.insert(State.Actions, {
                     Type = "Sell", Handle = m.Handle,
@@ -1067,10 +1014,10 @@ local function startRecording(profileName)
         end)
     end))
 
-    safeSpawn("record watcher", function()
+    task.spawn(function()
         while State.Recording and State.Running do
             if gameEnded() then
-                safeDefer("stop recording", function()
+                task.defer(function()
                     if State.Recording then StopRecording(true) end
                 end)
                 return
@@ -1220,14 +1167,14 @@ end
 
 local function playAbility(action)
     local t = resolveH(action.Handle)
-    if not t and action.Unit and TowerDataFolder then
+    if not t and action.Unit then
         for _, child in ipairs(TowerDataFolder:GetChildren()) do
             if own(child) and tostring(child:GetAttribute("ID")) == tostring(action.Unit) then
                 t = child; break
             end
         end
     end
-    if not t and action.TowerId and TowerDataFolder then
+    if not t and action.TowerId then
         t = TowerDataFolder:FindFirstChild(tostring(action.TowerId))
     end
     if not t then
@@ -1315,12 +1262,14 @@ local function waitGate(action, startedAt)
     return waitUntil(function()
         if not State.Playing or gameEnded() then return true end
         local el = os.clock() - startedAt
+        local curWave = getWave()
         local hasT = el >= rt
         local hasM = cost <= 0 or getMoney() >= cost
-        local hasW = wv <= 0 or getWave() >= wv
+        local hasW = wv <= 0 or curWave >= wv
+        if not hasW and curWave == 0 and el >= rt + 10 then hasW = true end
         if State.PlaybackMode == "Time" then return hasT end
         if State.PlaybackMode == "Money" then return hasM end
-        if wv > 0 and getWave() > wv then hasT = true end
+        if wv > 0 and curWave > wv then hasT = true end
         return hasW and hasT and hasM
     end, 600, rand(0.05, 0.12))
 end
@@ -1328,6 +1277,48 @@ end
 local function stopPlayback(reason)
     State.Playing = false
     State.PlaybackSession = State.PlaybackSession + 1
+end
+
+local function isMatchLoaded()
+    local r, h = getChar()
+    if not r or not h then return false end
+    refreshObjects()
+    return TowerDataFolder ~= nil and TowersFolder ~= nil and Remotes.Place ~= nil
+end
+
+local function pressZ()
+    if type(keypress) == "function" then
+        local ok = pcall(keypress, 0x5A)
+        task.wait(0.05)
+        if type(keyrelease) == "function" then pcall(keyrelease, 0x5A) end
+        if ok then return true end
+    end
+    if syn and type(syn.keypress) == "function" then
+        local ok = pcall(syn.keypress, 0x5A)
+        task.wait(0.05)
+        if type(syn.keyrelease) == "function" then pcall(syn.keyrelease, 0x5A) end
+        if ok then return true end
+    end
+    return false
+end
+
+local function waitForMatchLoad(session)
+    local deadline = os.clock() + 90
+    while State.Playing and session == State.PlaybackSession
+        and not gameEnded() and os.clock() < deadline do
+        if isMatchLoaded() then return true end
+        humanDelay(0.1, 0.03)
+    end
+    return isMatchLoaded()
+end
+
+local function gateMatchLoad(session)
+    if isMatchLoaded() then return true end
+    local froze = pressZ()
+    local okLoad = waitForMatchLoad(session)
+    humanDelay(0.8, 0.2)
+    if froze then pressZ() end
+    return okLoad
 end
 
 local function startPlayback()
@@ -1344,14 +1335,20 @@ local function startPlayback()
     State.PlaybackSession = State.PlaybackSession + 1
     local session = State.PlaybackSession
 
-    safeSpawn("playback", function()
+    task.spawn(function()
+        gateMatchLoad(session)
+        if not State.Playing or session ~= State.PlaybackSession then
+            if session == State.PlaybackSession then State.Playing = false end
+            return
+        end
+
         local startedAt = os.clock()
         local waveWaitStart = os.clock()
         while State.Playing and session == State.PlaybackSession
             and not gameEnded() and getWave() < 1 do
             startedAt = os.clock()
             humanDelay(0.06, 0.02)
-            if os.clock() - waveWaitStart > 60 then break end
+            if os.clock() - waveWaitStart > 5 then break end
         end
 
         for i, a in ipairs(State.Actions) do
@@ -1379,8 +1376,6 @@ end
 
 local function startPlayerRec(name)
     if State.Playing then return false, "stop playback first" end
-    -- [FIX 11] без этой проверки TowerDataFolder.ChildAdded падал в лобби
-    if not matchReady() then return false, "enter match first" end
     name = sanitize(name)
     if name == "" then return false, "empty" end
 
@@ -1401,7 +1396,7 @@ local function startPlayerRec(name)
 
 
     addConn(State.PlayerRecordingConnections, TowerDataFolder.ChildAdded:Connect(function(t)
-        safeSpawn("player record tower", function()
+        task.spawn(function()
             if not waitUntil(function() return own(t) and t:GetAttribute("ID") ~= nil end, 5, 0.05) then return end
             if not State.PlayerRecording then return end
             State.PlayerTrackedTowers[t] = true
@@ -1461,7 +1456,6 @@ local function startPlayerRec(name)
                 local ns = t:GetAttribute("ClockBoost")
                 if ns and tostring(ns) ~= "" and tostring(ns) ~= "0"
                     and tostring(ns) ~= tostring(m.ClockBoost) then
-                    if not TowerDataFolder or not TowerDataFolder.Parent then return end
                     local src = TowerDataFolder:FindFirstChild(tostring(ns))
                     push({ Type = "BoostLink",
                         SourceUnit = src and tostring(src:GetAttribute("ID")) or tostring(ns),
@@ -1487,7 +1481,7 @@ local function startPlayerRec(name)
             addConn(State.PlayerRecordingConnections, tg)
             addConn(State.PlayerRecordingConnections, bs)
             addConn(State.PlayerRecordingConnections, ab)
-            rmConn = TowerDataFolder and TowerDataFolder.ChildRemoved:Connect(function(c)
+            rmConn = TowerDataFolder.ChildRemoved:Connect(function(c)
                 if c ~= t or not State.PlayerRecording then return end
                 push({ Type = "Sell", Handle = m.Handle, Unit = tostring(t:GetAttribute("ID")) })
                 for _, conn in ipairs({ up, lv, tg, bs, ab, rmConn }) do
@@ -1498,8 +1492,7 @@ local function startPlayerRec(name)
         end)
     end))
 
-    -- [FIX 5] без IsA вызов :Connect на nil давал "attempt to call a nil value"
-    if Remotes.Speed and typeof(Remotes.Speed) == "Instance" and Remotes.Speed:IsA("RemoteEvent") then
+    if Remotes.Speed then
         addConn(State.PlayerRecordingConnections, Remotes.Speed.OnClientEvent:Connect(function(sp)
             if not State.PlayerRecording then return end
             push({ Type = "Speed", Speed = tonumber(sp) or 1 })
@@ -1530,13 +1523,9 @@ local function stopPlayerRec(save)
     end
     State.PlayerRecordingConnections = {}
     if save and HAS_FS then
-        -- [FIX 10] при пустом имени файл писался как "_player.json"
-        local profName = State.PlayerRecordingProfileName
-        if profName == nil or profName == "" then profName = "PlayerMacro" end
-        State.PlayerRecordingProfileName = profName
-        local payload = { Version = 2, Name = profName, Actions = State.PlayerActions }
+        local payload = { Version = 2, Name = State.PlayerRecordingProfileName, Actions = State.PlayerActions }
         pcall(function()
-            writefile(playerProfilePath(profName),
+            writefile(playerProfilePath(State.PlayerRecordingProfileName),
                 HttpService:JSONEncode(payload))
         end)
     end
@@ -1580,7 +1569,7 @@ local function applyConfig()
     State.WebhookURL = tostring(Config.WebhookURL or "")
     State.WebhookMatchEnd = Config.WebhookMatchEnd ~= false
     State.PlaybackEnabled = Config.PlaybackEnabled == true
-    State.Speed = toInt(Config.Speed, 1, 1, 6)
+    State.Speed = math.clamp(tonumber(Config.Speed) or 1, 1, 6)
     State.PlaybackMode = table.find({ "Hybrid", "Time", "Money" }, Config.PlaybackMode)
         and Config.PlaybackMode or "Hybrid"
     State.ProfileName = sanitize(Config.SelectedProfile or "")
@@ -1616,7 +1605,7 @@ end
 local function queueSave()
     if saveQueued then return end
     saveQueued = true
-    safeDelay("queue save", 0.3, function()
+    task.delay(0.3, function()
         saveQueued = false
         saveConfig()
     end)
@@ -1729,48 +1718,75 @@ if not table.find(initChapters, State.LobbyChapter) then
     State.LobbyChapter = initChapters[1] or "Chapter 1"
 end
 
--- [FIX 2/3] Надёжная загрузка WindUI: несколько URL, проверка компиляции и объекта.
-local function loadWindUI()
-    local urls = {
-        "https://github.com/Footagesus/WindUI/releases/latest/download/main.lua",
-        "https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua",
-    }
-    local lastErr = "no sources"
-
-    for _, url in ipairs(urls) do
-        local getOk, src = pcall(function() return game:HttpGet(url) end)
-        if not getOk or type(src) ~= "string" or #src < 256 or src:find("^<!DOCTYPE") then
-            lastErr = "HttpGet: " .. tostring(src)
-        else
-            local chunkFn, compileErr
-            if type(loadstring) == "function" then
-                chunkFn, compileErr = loadstring(src)
-            elseif type(load) == "function" then
-                chunkFn, compileErr = load(src)
-            else
-                lastErr = "no loadstring/load in this environment"
-            end
-
-            if type(chunkFn) ~= "function" then
-                lastErr = "compile: " .. tostring(compileErr)
-            else
-                local runOk, lib = pcall(chunkFn)
-                if not runOk then
-                    lastErr = "runtime: " .. tostring(lib)
-                elseif type(lib) ~= "table" or type(lib.CreateWindow) ~= "function" then
-                    lastErr = "bad library object (" .. tostring(typeof(lib)) .. ")"
-                else
-                    return lib
-                end
-            end
+local function httpGetText(url)
+    local candidates = {}
+    if game and type(game.HttpGet) == "function" then
+        candidates[#candidates + 1] = { name = "game:HttpGet", fn = function() return game:HttpGet(url) end }
+    end
+    if syn and type(syn.request) == "function" then
+        candidates[#candidates + 1] = { name = "syn.request", fn = function()
+            local r = syn.request({ Url = url, Method = "GET" })
+            return (type(r) == "table" and r.Body) or r
+        end }
+    end
+    if http and type(http.request) == "function" then
+        candidates[#candidates + 1] = { name = "http.request", fn = function()
+            local r = http.request({ Url = url, Method = "GET" })
+            return (type(r) == "table" and r.Body) or r
+        end }
+    end
+    if type(http_request) == "function" then
+        candidates[#candidates + 1] = { name = "http_request", fn = function()
+            local r = http_request({ Url = url, Method = "GET" })
+            return (type(r) == "table" and r.Body) or r
+        end }
+    end
+    if type(request) == "function" then
+        candidates[#candidates + 1] = { name = "request", fn = function()
+            local r = request({ Url = url, Method = "GET" })
+            return (type(r) == "table" and r.Body) or r
+        end }
+    end
+    if fluxus and type(fluxus.request) == "function" then
+        candidates[#candidates + 1] = { name = "fluxus.request", fn = function()
+            local r = fluxus.request({ Url = url, Method = "GET" })
+            return (type(r) == "table" and r.Body) or r
+        end }
+    end
+    if krnl and type(krnl.request) == "function" then
+        candidates[#candidates + 1] = { name = "krnl.request", fn = function()
+            local r = krnl.request({ Url = url, Method = "GET" })
+            return (type(r) == "table" and r.Body) or r
+        end }
+    end
+    for _, m in ipairs(candidates) do
+        local ok, body = pcall(m.fn)
+        if ok and type(body) == "string" and #body > 100 then
+            return body, m.name
         end
     end
-    return nil, lastErr
+    return nil, nil
 end
 
-local WindUI, windErr = loadWindUI()
-if not WindUI then
-    return warn("[Hub] WindUI load failed: " .. tostring(windErr))
+local WindUI
+do
+    local urls = {
+        "https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua",
+        "https://cdn.jsdelivr.net/gh/Footagesus/WindUI@main/dist/main.lua",
+    }
+    local src
+    for _, u in ipairs(urls) do
+        local s = httpGetText(u)
+        if s then src = s; break end
+    end
+    if not src then
+        return warn("[Hub] WindUI download failed (no HTTP method/URL worked). Check your executor's HTTP.")
+    end
+    local ok, r = pcall(function()
+        return loadstring(src)()
+    end)
+    if not ok then return warn("[Hub] WindUI run failed: " .. tostring(r)) end
+    WindUI = r
 end
 
 local Window
@@ -1810,42 +1826,14 @@ local function wrapParagraph(el)
     return w
 end
 
--- [FIX 4] Любой Callback оборачивается в pcall -> ошибка в колбэке не роняет UI
-local function wrapOpts(o)
-    if type(o) == "table" and type(o.Callback) == "function" then
-        local cb = o.Callback
-        o.Callback = function(...)
-            local ok, err = pcall(cb, ...)
-            if not ok then
-                warn("[Hub] GUI callback -> " .. tostring(err))
-            end
-        end
-    end
-    return o
-end
-
-local function safeCreate(kind, obj, o)
-    if not obj then
-        warn("[Hub] UI element skipped (parent is nil): " .. tostring(kind))
-        return nil
-    end
-    o = wrapOpts(o)
-    local ok, r = pcall(function() return obj[kind](obj, o) end)
-    if not ok then
-        warn(string.format("[Hub] UI element %s failed -> %s", tostring(kind), tostring(r)))
-        return nil
-    end
-    return r
-end
-
-local function safeTab(w, o) return safeCreate("Tab", w, o) end
-local function safeSection(t, o) return safeCreate("Section", t, o) end
-local function safeButton(t, o) return safeCreate("Button", t, o) end
-local function safeToggle(t, o) return safeCreate("Toggle", t, o) end
-local function safeInput(t, o) return safeCreate("Input", t, o) end
-local function safeDropdown(t, o) return safeCreate("Dropdown", t, o) end
-local function safeSlider(t, o) return safeCreate("Slider", t, o) end
-local function safeParagraph(t, o) return safeCreate("Paragraph", t, o) end
+local function safeTab(w, o) if not w then return nil end; local ok, r = pcall(function() return w:Tab(o) end); return ok and r or nil end
+local function safeSection(t, o) if not t then return nil end; local ok, r = pcall(function() return t:Section(o) end); return ok and r or nil end
+local function safeButton(t, o) if not t then return nil end; local ok, r = pcall(function() return t:Button(o) end); return ok and r or nil end
+local function safeToggle(t, o) if not t then return nil end; local ok, r = pcall(function() return t:Toggle(o) end); return ok and r or nil end
+local function safeInput(t, o) if not t then return nil end; local ok, r = pcall(function() return t:Input(o) end); return ok and r or nil end
+local function safeDropdown(t, o) if not t then return nil end; local ok, r = pcall(function() return t:Dropdown(o) end); return ok and r or nil end
+local function safeSlider(t, o) if not t then return nil end; local ok, r = pcall(function() return t:Slider(o) end); return ok and r or nil end
+local function safeParagraph(t, o) if not t then return nil end; local ok, r = pcall(function() return t:Paragraph(o) end); return ok and r or nil end
 
 
 local LobbyTab   = safeTab(Window, { Title = "Lobby", Icon = "house" })
@@ -1884,11 +1872,22 @@ end
 safeSection(LobbyTab, { Title = "Lobby Automation", Desc = "Ready and replay" })
 
 local chapterDropdown
-safeDropdown(LobbyTab, {
+local modeDropdown
+modeDropdown = safeDropdown(LobbyTab, {
     Title = "Mode",
-    Values = { "Story", "Multiverse", "Nightmare", "Event", "Versus", "Endless", "Episodes", "Raid", "All" },
+    Values = {
+        "Story", "Multiverse", "Nightmare", "Event", "Versus", "Endless", "Episodes", "Raid", "All",
+        "Act 2 2026 (Coming Soon)", "Act 3 2026 (Coming Soon)",
+    },
     Value = State.LobbyMode, Multi = false,
     Callback = function(v)
+        if type(v) == "string" and v:find("(Coming Soon)", 1, true) then
+            notify("Coming Soon", v .. " — этот режим ещё не вышел.")
+            if modeDropdown then
+                pcall(function() modeDropdown:Select(State.LobbyMode) end)
+            end
+            return
+        end
         State.LobbyMode = v
         local chs = chaptersFor(v)
         if not table.find(chs, State.LobbyChapter) then State.LobbyChapter = chs[1] or "" end
@@ -1970,7 +1969,7 @@ safeToggle(LobbyTab, {
     end,
 })
 
-safeSpawn("auto join", function()
+task.spawn(function()
     while State.Running do
         if game.PlaceId == LOBBY_PLACE_ID and State.AutoJoinMap
             and State.LobbyChapter ~= "" then
@@ -1982,7 +1981,7 @@ safeSpawn("auto join", function()
                 refreshObjects()
                 if Remotes.CreateServer then
                     State.JoinRequested = true
-                safeSpawn("join server", function()
+                task.spawn(function()
                     local ok, res = pcall(function() return Remotes.CreateServer:InvokeServer(State.LobbyChapter) end)
                     if not ok then
                         State.JoinRequested = false
@@ -2101,7 +2100,7 @@ profileDropdown = safeDropdown(MacrosTab, {
         if ok then
             refreshActionList()
             setStatus("Loaded", string.format("%s (%d)", State.ProfileName, #State.Actions))
-            queueSave(); safeDefer("auto playback", startEnabledPlayback)
+            queueSave(); task.defer(startEnabledPlayback)
         else
             setStatus("Load failed", tostring(msg))
         end
@@ -2121,7 +2120,7 @@ safeButton(MacrosTab, {
 safeButton(MacrosTab, {
     Title = "Import Macro (Paste)", Icon = "clipboard-paste",
     Callback = function()
-        local clip = readClipboard()
+        local clip = (type(getclipboard) == "function" and getclipboard()) or ""
         if clip == "" then notify("Import", "Clipboard empty"); return end
         local ok, dec = pcall(function() return HttpService:JSONDecode(clip) end)
         if ok and dec and type(dec.Actions) == "table" then
@@ -2149,7 +2148,7 @@ safeButton(MacrosTab, {
 safeButton(MacrosTab, {
     Title = "Import Player Macro (Paste)", Icon = "user-check",
     Callback = function()
-        local clip = readClipboard()
+        local clip = (type(getclipboard) == "function" and getclipboard()) or ""
         if clip == "" then notify("Import", "Clipboard empty"); return end
         local ok, dec = pcall(function() return HttpService:JSONDecode(clip) end)
         if ok and dec and type(dec.Actions) == "table" then
@@ -2373,7 +2372,7 @@ playerPlayToggle = safeToggle(PlayerTab, {
             State.PlayerPlaybackSession = State.PlayerPlaybackSession + 1
             local sess = State.PlayerPlaybackSession
 
-            safeSpawn("player playback", function()
+            task.spawn(function()
                 local startedAt = os.clock()
                 for _, a in ipairs(State.PlayerActions) do
                     if not State.Playing or sess ~= State.PlayerPlaybackSession then break end
@@ -2450,7 +2449,7 @@ playerPlayToggle = safeToggle(PlayerTab, {
 })
 Gui.PlayerPlaybackToggle = playerPlayToggle
 
-safeSpawn("player runtime", function()
+task.spawn(function()
     while State.Running do
         if playerRuntime then
             playerRuntime:SetDesc(string.format("Wave %d | Money %d | %s | Base %s | Speed x%d",
@@ -2475,7 +2474,7 @@ safeDropdown(MiscTab, {
     Value = "x" .. tostring(State.Speed), Multi = false,
     Callback = function(v)
         local s = tonumber(tostring(v):match("%d+")) or 1
-        State.Speed = toInt(s, 1, 1, 6)
+        State.Speed = math.clamp(s, 1, 6)
         queueSave()
     end,
 })
@@ -2491,7 +2490,7 @@ safeToggle(MiscTab, {
     Callback = function(v) setMoving(v); queueSave() end,
 })
 
-if State.MovingAround then safeDefer("resume moving", function() setMoving(true) end) end
+if State.MovingAround then task.defer(function() setMoving(true) end) end
 
 if State.ProfileName ~= "" then
     local ok = loadProfile(State.ProfileName)
@@ -2499,7 +2498,7 @@ if State.ProfileName ~= "" then
 end
 
 if State.PlaybackEnabled and #State.Actions > 0 then
-    safeDelay("auto playback", rand(0.8, 2.0), function()
+    task.delay(rand(0.8, 2.0), function()
         if State.PlaybackEnabled and #State.Actions > 0 then startEnabledPlayback() end
     end)
 end
@@ -2508,7 +2507,7 @@ end
 State.AutomationSession = State.AutomationSession + 1
 local automationSession = State.AutomationSession
 
-safeSpawn("automation", function()
+task.spawn(function()
     local lastReady, lastSkip = 0, 0
     local speedReadySince
     local lastRefresh = 0
@@ -2579,7 +2578,7 @@ safeSpawn("automation", function()
 
         if ended and not replayLatched then
             replayLatched = true
-            if State.AutoBackLobby and State.LastCountedJobId ~= game.JobId then
+            if State.AutoBackLobby then
                 State.LastCountedJobId = game.JobId
                 State.MatchesCompleted = State.MatchesCompleted + 1
                 if State.MatchesCompleted >= State.MatchesBeforeLobby then
@@ -2597,7 +2596,7 @@ safeSpawn("automation", function()
             sendMatchEndWebhook()
 
             if State.PendingLobbyReturn then
-                safeSpawn("return lobby", forceReturnToLobby)
+                task.spawn(function() forceReturnToLobby() end)
             end
 
             local shouldReplay = State.AutoReplay and not State.PendingLobbyReturn
@@ -2624,7 +2623,7 @@ end)
 State.UISession = State.UISession + 1
 local uiSession = State.UISession
 
-safeSpawn("ui refresh", function()
+task.spawn(function()
     while State.Running and uiSession == State.UISession do
         if Gui.Runtime then
             Gui.Runtime:SetTitle(State.Playing and ("Live match - " .. State.PlaybackMode) or "Live match")
