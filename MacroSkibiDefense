@@ -437,12 +437,23 @@ local function getBackButton()
             end
         end
     end
-    return nil
+    local cam = Workspace.CurrentCamera
+    local screenH = (cam and cam.ViewportSize.Y) or 900
+    local best, bestX = nil, math.huge
+    for _, d in ipairs(root:GetDescendants()) do
+        if d:IsA("GuiButton") and d.Visible and d.AbsoluteSize.X >= 80 then
+            local pos = d.AbsolutePosition
+            if pos.Y > screenH * 0.5 and pos.X < bestX then
+                best, bestX = d, pos.X
+            end
+        end
+    end
+    return best
 end
 
 local function tryFireBackButton(btn)
     if not btn or not btn.Parent then return false end
-    local signals = { "MouseButton1Click", "Activated" }
+    local signals = { "MouseButton1Click", "Activated", "MouseButton1Down", "MouseButton1Up" }
     for _, sname in ipairs(signals) do
         local sig = btn[sname]
         if sig then
@@ -485,12 +496,20 @@ local function forceReturnToLobby()
     local startJob = game.JobId
     local deadline = os.clock() + 60
     local leftMatch = false
+    local logged = false
 
     while State.Running and State.PendingLobbyReturn
         and os.clock() < deadline and game.JobId == startJob and not leftMatch do
         local btn = getBackButton()
         if btn then
+            if not logged then
+                logged = true
+                warn("[Hub] Return: button " .. tostring(btn.Name) .. " (" .. btn.ClassName .. ")")
+            end
             tryFireBackButton(btn)
+        elseif not logged then
+            logged = true
+            warn("[Hub] Return: button not found")
         end
         if not gameEnded() then
             leftMatch = true
@@ -1384,15 +1403,18 @@ local function startPlayback()
             if i == 1 then State.PlaybackFirstActionArmed = true end
             if not waitGate(a, startedAt) then break end
 
-            local ok = true
-            if a.Type == "Place" then ok = playPlace(a)
-            elseif a.Type == "Upgrade" then ok = playUpgrade(a)
-            elseif a.Type == "Sell" then ok = playSell(a)
-            elseif a.Type == "Target" then ok = playTarget(a)
-            elseif a.Type == "Ability" then ok = playAbility(a)
-            elseif a.Type == "BoostLink" then ok = playBoost(a)
+            local skipAction = (a.Type == "Ability" or a.Type == "Target") and math.random() < 0.125
+            if not skipAction then
+                local ok = true
+                if a.Type == "Place" then ok = playPlace(a)
+                elseif a.Type == "Upgrade" then ok = playUpgrade(a)
+                elseif a.Type == "Sell" then ok = playSell(a)
+                elseif a.Type == "Target" then ok = playTarget(a)
+                elseif a.Type == "Ability" then ok = playAbility(a)
+                elseif a.Type == "BoostLink" then ok = playBoost(a)
+                end
+                if not ok then break end
             end
-            if not ok then break end
             if math.random() < 0.12 then humanDelay(0.9, 0.7) end
         end
 
@@ -2580,7 +2602,7 @@ task.spawn(function()
 
         if State.AutoReady and not ended and Remotes.Ready
             and not State.Playing
-            and now - lastReady >= 1 then
+            and now - lastReady >= rand(1.5, 3) then
             lastReady = now
             pcall(function() Remotes.Ready:FireServer(true) end)
         end
@@ -2605,7 +2627,9 @@ task.spawn(function()
             if speedReadySince == nil then speedReadySince = now
             elseif now - speedReadySince >= State.SpeedScaleDelay then
                 speedReadySince = now
-                pcall(function() Remotes.Speed:FireServer(State.Speed) end)
+                local sp = State.Speed
+                if math.random() < 0.2 then sp = math.max(1, State.Speed - 1) end
+                pcall(function() Remotes.Speed:FireServer(sp) end)
             end
         else
             speedReadySince = nil
@@ -2638,7 +2662,11 @@ task.spawn(function()
             if shouldReplay and Remotes.Replay then
                 restartAfterReplay = not State.PendingLobbyReturn
                     and State.PlaybackEnabled and #State.Actions > 0
-                pcall(function() Remotes.Replay:FireServer() end)
+                task.spawn(function()
+                    humanDelay(17.5, 12.5)
+                    if not State.AutoReplay or State.PendingLobbyReturn or State.Playing then return end
+                    pcall(function() Remotes.Replay:FireServer() end)
+                end)
             end
         elseif not ended then
             replayLatched = false
