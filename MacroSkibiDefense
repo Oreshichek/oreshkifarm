@@ -2525,6 +2525,7 @@ task.spawn(function()
     local startupSpeedReset = false
     local replayLatched = false
     local restartAfterReplay = false
+    local replayRetryAt = 0
 
     while State.Running and automationSession == State.AutomationSession do
         local now = os.clock()
@@ -2555,7 +2556,10 @@ task.spawn(function()
             Gui.StartEnabledPlayback()
         end
 
-        if State.AutoReady and not ended and Remotes.Ready and now - lastReady >= 1 then
+        if State.AutoReady and not ended and Remotes.Ready
+            and not mr
+            and not State.Playing
+            and now - lastReady >= 1 then
             lastReady = now
             pcall(function() Remotes.Ready:FireServer(true) end)
         end
@@ -2617,11 +2621,19 @@ task.spawn(function()
             end
         elseif not ended then
             replayLatched = false
-            if restartAfterReplay and not State.Playing then
-                restartAfterReplay = false
-                local ok, msg = startPlayback()
-                if ok and Gui.SetPlaybackToggle then Gui.SetPlaybackToggle(true)
-                elseif not ok then setStatus("Replay", tostring(msg)) end
+            if restartAfterReplay and not State.Playing and now >= replayRetryAt then
+                if #State.Actions == 0 or not State.PlaybackEnabled then
+                    restartAfterReplay = false
+                else
+                    replayRetryAt = now + 1.0
+                    local ok, msg = startPlayback()
+                    if ok then
+                        restartAfterReplay = false
+                        if Gui.SetPlaybackToggle then Gui.SetPlaybackToggle(true) end
+                    else
+                        setStatus("Replay", tostring(msg))
+                    end
+                end
             end
         end
 
