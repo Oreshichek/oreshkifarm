@@ -174,8 +174,7 @@ refreshObjects()
 local function matchReady()
     refreshObjects()
     return TowerDataFolder ~= nil and TowersFolder ~= nil
-        and Remotes.Place ~= nil and Remotes.Upgrade ~= nil
-        and Remotes.Sell ~= nil and Remotes.Target ~= nil
+        and Remotes.Place ~= nil
 end
 
 
@@ -1292,6 +1291,7 @@ end
 local function isMatchLoaded()
     local r, h = getChar()
     if not r or not h then return false end
+    if not Workspace:FindFirstChild("Map") then return false end
     refreshObjects()
     return TowerDataFolder ~= nil and TowersFolder ~= nil and Remotes.Place ~= nil
 end
@@ -1323,10 +1323,13 @@ local function waitForMatchLoad(session)
 end
 
 local function gateMatchLoad(session)
-    if isMatchLoaded() then return true end
+    if isMatchLoaded() then
+        humanDelay(1.0, 0.3)
+        return true
+    end
     local froze = pressZ()
     local okLoad = waitForMatchLoad(session)
-    humanDelay(0.8, 0.2)
+    humanDelay(1.2, 0.4)
     if froze then pressZ() end
     return okLoad
 end
