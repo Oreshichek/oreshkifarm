@@ -484,17 +484,22 @@ local function forceReturnToLobby()
     if not State.PendingLobbyReturn then return false end
     local startJob = game.JobId
     local deadline = os.clock() + 60
+    local leftMatch = false
 
     while State.Running and State.PendingLobbyReturn
-        and os.clock() < deadline and game.JobId == startJob do
+        and os.clock() < deadline and game.JobId == startJob and not leftMatch do
         local btn = getBackButton()
         if btn then
             tryFireBackButton(btn)
         end
+        if not gameEnded() then
+            leftMatch = true
+            break
+        end
         humanDelay(0.25, 0.08)
     end
 
-    local changed = game.JobId ~= startJob
+    local changed = (game.JobId ~= startJob) or leftMatch or not gameEnded()
     if changed then
         State.PendingLobbyReturn = false
         State.MatchesCompleted = 0
