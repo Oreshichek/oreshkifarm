@@ -409,21 +409,31 @@ task.spawn(function()
 end)
 
 
+local function isBackLabel(s)
+    s = tostring(s or ""):lower()
+    return s:find("return", 1, true) or s:find("back", 1, true)
+        or s:find("lobby", 1, true) or s:find("leave", 1, true) or s:find("menu", 1, true)
+end
+
 local function getBackButton()
-    local ge = getGui() and getGui():FindFirstChild("GameEnded")
-    if not ge then return nil end
-    local fr = ge:FindFirstChild("Frame")
-    if fr then
-        for _, d in ipairs(fr:GetChildren()) do
-            if d:IsA("GuiButton") and tostring(d.Name):lower():find("back", 1, true) then
-                return d
-            end
+    local gui = getGui()
+    if not gui then return nil end
+    local ge = gui:FindFirstChild("GameEnded")
+    local root = ge or gui
+    for _, d in ipairs(root:GetDescendants()) do
+        if d:IsA("GuiButton") and isBackLabel(d.Name) then return d end
+    end
+    for _, d in ipairs(root:GetDescendants()) do
+        if d:IsA("GuiButton") and isBackLabel(d.Text) then return d end
+    end
+    for _, d in ipairs(root:GetDescendants()) do
+        if d:IsA("TextLabel") and isBackLabel(d.Text) and d.Parent and d.Parent:IsA("GuiButton") then
+            return d.Parent
         end
     end
-    for _, d in ipairs(ge:GetDescendants()) do
-        if d:IsA("GuiButton") then
-            local n = tostring(d.Name):lower()
-            if n:find("back", 1, true) or n:find("lobby", 1, true) or n:find("leave", 1, true) then
+    if ge then
+        for _, d in ipairs(gui:GetDescendants()) do
+            if d:IsA("GuiButton") and (isBackLabel(d.Name) or isBackLabel(d.Text)) then
                 return d
             end
         end
@@ -1068,7 +1078,8 @@ local function playPlace(action)
         return true
     end
     local cost = tonumber(action.EstimatedCost) or 0
-    local deadline = os.clock() + 180
+    local deadline = os.clock() + 60
+    local startT = os.clock()
     while State.Playing and os.clock() < deadline and not gameEnded() do
         ex = findRuntime(action)
         if ex then
@@ -1076,19 +1087,18 @@ local function playPlace(action)
             State.UsedRuntimeTowers[ex] = true
             return true
         end
-        if getMoney() >= cost then
-            if Remotes.Place then
-                local jitter = Vector3.new(rand(-0.3, 0.3), 0, rand(-0.3, 0.3))
-                pcall(function() Remotes.Place:FireServer(action.Unit, cf + jitter, false) end)
-                local ok, tower = waitUntil(function() return findRuntime(action) end, 3, 0.1)
-                if ok and tower then
-                    State.RuntimeHandles[action.Handle] = tower
-                    State.UsedRuntimeTowers[tower] = true
-                    return true
-                end
+        local canTry = (cost <= 0) or (getMoney() >= cost) or (os.clock() - startT >= 4)
+        if canTry and Remotes.Place then
+            local jitter = Vector3.new(rand(-0.3, 0.3), 0, rand(-0.3, 0.3))
+            pcall(function() Remotes.Place:FireServer(action.Unit, cf + jitter, false) end)
+            local ok, tower = waitUntil(function() return findRuntime(action) end, 2, 0.1)
+            if ok and tower then
+                State.RuntimeHandles[action.Handle] = tower
+                State.UsedRuntimeTowers[tower] = true
+                return true
             end
         end
-        humanDelay(0.9, 0.4)
+        humanDelay(0.7, 0.3)
     end
     return true
 end
