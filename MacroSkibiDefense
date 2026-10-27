@@ -541,17 +541,40 @@ local saveConfig
 local newProfileName
 local newPlayerName
 
+-- Real lobby detection. "not gameEnded()" alone is NOT proof: the end screen is
+-- hidden as soon as a replay starts, which reset the counter without ever
+-- reaching the lobby (the "after X matches it never returns" bug).
+local function lobbyReached(startJob, startPlace)
+    if game.PlaceId == LOBBY_PLACE_ID then return true end
+    if startPlace and game.PlaceId ~= startPlace then return true end
+    if startJob and game.JobId ~= startJob then return true end
+    if not gameEnded() then
+        refreshObjects()
+        local hasTowerData = TowerDataFolder ~= nil and TowerDataFolder.Parent ~= nil
+        local hasTowers = TowersFolder ~= nil and TowersFolder.Parent ~= nil
+        if not hasTowerData and not hasTowers then return true end
+    end
+    return false
+end
+
 local function forceReturnToLobby()
     if not State.PendingLobbyReturn then return false end
     local startJob = game.JobId
+    local startPlace = game.PlaceId
     local deadline = os.clock() + 60
-    local leftMatch = false
     local logged = false
 
-    while State.Running and State.PendingLobbyReturn
-        and os.clock() < deadline and game.JobId == startJob and not leftMatch do
-        local btn = getBackButton()
-        if btn then
+    while State.Running and State.PendingLobbyReturn and os.clock() < deadline do
+        if lobbyReached(startJob, startPlace) then
+            State.PendingLobbyReturn = false
+            State.MatchesCompleted = 0
+            State.LastCountedJobId = ""
+            saveConfig()
+            warn("[Hub] Return to lobby: OK")
+            return true
+        end
+        local btn = gameEnded() and getBackButton() or nil
+        if btn and btn.Parent then
             if not logged then
                 logged = true
                 warn("[Hub] Return: " .. btn:GetFullName() .. " text=" .. tostring(safeText(btn)))
@@ -559,30 +582,18 @@ local function forceReturnToLobby()
             tryFireBackButton(btn)
         elseif not logged then
             logged = true
-            warn("[Hub] Return: button not found")
+            warn("[Hub] Return: button not found (waiting)")
         end
-        if not gameEnded() then
-            leftMatch = true
-            break
-        end
-        humanDelay(0.25, 0.08)
+        humanDelay(0.35, 0.12)
     end
 
-    local changed = (game.JobId ~= startJob) or leftMatch or not gameEnded()
-    if changed then
-        State.PendingLobbyReturn = false
-        State.MatchesCompleted = 0
-        State.LastCountedJobId = ""
-        saveConfig()
-    else
-        State.PendingLobbyReturn = false
-        warn("[Hub] Return to lobby failed; falling back to replay")
-        refreshObjects()
-        if Remotes.Replay then
-            pcall(function() Remotes.Replay:FireServer() end)
-        end
+    State.PendingLobbyReturn = false
+    warn("[Hub] Return to lobby failed after 60s; falling back to replay")
+    refreshObjects()
+    if Remotes.Replay then
+        pcall(function() Remotes.Replay:FireServer() end)
     end
-    return changed
+    return false
 end
 
 
@@ -1873,309 +1884,31 @@ local function httpGetText(url, minSize)
     return best, bestName
 end
 
--- === Self-contained minimal UI (no external download) ===
-local WindUI = {}
+-- WindUI from the RELEASE asset (274 KB). The repo dist/main.lua is 1.35 MB and
+-- gets truncated by executors with a ~1 MB download cap -> INCOMPLETE STATEMENT.
+local WindUI
 do
-    local UIS = game:GetService("UserInputService")
-    local PL = game:GetService("Players").LocalPlayer
-    local gp
-    pcall(function() gp = game:GetService("CoreGui") end)
-    if not gp or not gp.Parent then gp = PL:FindFirstChildOfClass("PlayerGui") end
-    if not gp then return warn("[Hub] no GUI parent") end
-
-    local C = {
-        bg = Color3.fromRGB(24,24,28), panel = Color3.fromRGB(32,32,38),
-        item = Color3.fromRGB(40,40,48), text = Color3.fromRGB(235,235,240),
-        sub = Color3.fromRGB(150,150,160), on = Color3.fromRGB(70,190,110),
-        off = Color3.fromRGB(70,70,82), red = Color3.fromRGB(190,60,60),
-        accent = Color3.fromRGB(80,160,255),
+    local urls = {
+        "https://github.com/Footagesus/WindUI/releases/latest/download/main.lua",
+        "https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua",
     }
-    local function mk(cls, p, par)
-        local o = Instance.new(cls)
-        if p then for k, v in pairs(p) do o[k] = v end end
-        if par then o.Parent = par end
-        return o
-    end
-    local function rnd(o, r)
-        local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, r or 6); c.Parent = o
-    end
-
-    local sg = mk("ScreenGui", { Name = "SkibidiDefenseHub", ResetOnSpawn = false, ZIndexBehavior = Enum.ZIndexBehavior.Sibling }, gp)
-    local win = mk("Frame", {
-        Size = UDim2.fromOffset(620,480), Position = UDim2.new(0,60,0,60),
-        BackgroundColor3 = C.bg, BorderSizePixel = 0, Active = true, Draggable = true, ClipsDescendants = true,
-    }, sg)
-    rnd(win, 10)
-    local top = mk("Frame", { Size = UDim2.new(1,0,0,38), BackgroundColor3 = C.panel, BorderSizePixel = 0 }, win)
-    rnd(top, 10)
-    mk("TextLabel", { Size = UDim2.new(1,-80,0,18), Position = UDim2.fromOffset(12,4), BackgroundTransparency = 1,
-        Text = "Skibidi Defense Hub", TextColor3 = C.text, Font = Enum.Font.GothamBold, TextSize = 15,
-        TextXAlignment = Enum.TextXAlignment.Left }, top)
-    mk("TextLabel", { Size = UDim2.new(1,-80,0,12), Position = UDim2.fromOffset(12,22), BackgroundTransparency = 1,
-        Text = "oreshik :3", TextColor3 = C.sub, Font = Enum.Font.Gotham, TextSize = 11,
-        TextXAlignment = Enum.TextXAlignment.Left }, top)
-    local closeBtn = mk("TextButton", { Size = UDim2.fromOffset(26,26), Position = UDim2.new(1,-34,0,6),
-        BackgroundColor3 = C.red, Text = "X", TextColor3 = C.text, Font = Enum.Font.GothamBold, TextSize = 12, BorderSizePixel = 0 }, top)
-    rnd(closeBtn, 6)
-    closeBtn.MouseButton1Click:Connect(function() win.Visible = false end)
-
-    local tabCol = mk("ScrollingFrame", { Size = UDim2.new(0,170,1,-38), Position = UDim2.new(0,0,0,38),
-        BackgroundColor3 = C.panel, BorderSizePixel = 0, ScrollBarThickness = 4,
-        CanvasSize = UDim2.new(0,0,0,0), AutomaticCanvasSize = Enum.AutomaticSize.Y }, win)
-    mk("UIListLayout", { Padding = UDim.new(0,4), SortOrder = Enum.SortOrder.LayoutOrder }, tabCol)
-    mk("UIPadding", { PaddingTop = UDim.new(0,8), PaddingLeft = UDim.new(0,8), PaddingRight = UDim.new(0,8) }, tabCol)
-
-    local content = mk("Frame", { Size = UDim2.new(1,-170,1,-38), Position = UDim2.new(0,170,0,38),
-        BackgroundColor3 = C.bg, BorderSizePixel = 0, ClipsDescendants = true }, win)
-
-    local notifCol = mk("Frame", { Size = UDim2.new(0,300,1,-20), Position = UDim2.new(1,-310,0,10),
-        BackgroundTransparency = 1 }, sg)
-    mk("UIListLayout", { Padding = UDim.new(0,6), SortOrder = Enum.SortOrder.LayoutOrder }, notifCol)
-
-    local tabs = {}
-    local function selectTab(t)
-        for _, x in ipairs(tabs) do x.frame.Visible = (x == t) end
-    end
-
-    local function makeToggle(par, opts)
-        local row = mk("Frame", { Size = UDim2.new(1,0,0,34), BackgroundColor3 = C.item, BorderSizePixel = 0 }, par)
-        rnd(row, 6)
-        mk("TextLabel", { Size = UDim2.new(1,-60,1,0), Position = UDim2.fromOffset(10,0), BackgroundTransparency = 1,
-            Text = tostring(opts.Title or ""), TextColor3 = C.text, Font = Enum.Font.Gotham, TextSize = 13,
-            TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd }, row)
-        local state = opts.Value == true
-        local knob = mk("TextButton", { Size = UDim2.fromOffset(40,20), Position = UDim2.new(1,-50,0.5,-10),
-            BackgroundColor3 = state and C.on or C.off, BorderSizePixel = 0, Text = "", AutoButtonColor = false }, row)
-        rnd(knob, 10)
-        local dot = mk("Frame", { Size = UDim2.fromOffset(16,16), BackgroundColor3 = C.text, BorderSizePixel = 0 }, knob)
-        rnd(dot, 8)
-        local obj = { Value = state }
-        local function render()
-            knob.BackgroundColor3 = state and C.on or C.off
-            dot.Position = state and UDim2.new(1,-18,0.5,-8) or UDim2.new(0,2,0.5,-8)
-        end
-        function obj:Set(v)
-            state = v == true; self.Value = state; render()
-        end
-        knob.MouseButton1Click:Connect(function()
-            state = not state; obj.Value = state; render()
-            if opts.Callback then pcall(opts.Callback, state) end
-        end)
-        render()
-        return obj
-    end
-
-    local function makeButton(par, opts)
-        local b = mk("TextButton", { Size = UDim2.new(1,0,0,32), BackgroundColor3 = C.item, Text = "  " .. tostring(opts.Title or "Button"),
-            TextColor3 = C.text, Font = Enum.Font.GothamBold, TextSize = 13, TextXAlignment = Enum.TextXAlignment.Left,
-            BorderSizePixel = 0, AutoButtonColor = true }, par)
-        rnd(b, 6)
-        b.MouseButton1Click:Connect(function()
-            task.spawn(function()
-                pcall(opts.Callback)
-            end)
-        end)
-        return b
-    end
-
-    local function makeInput(par, opts)
-        local row = mk("Frame", { Size = UDim2.new(1,0,0,58), BackgroundColor3 = C.item, BorderSizePixel = 0 }, par)
-        rnd(row, 6)
-        mk("TextLabel", { Size = UDim2.new(1,-20,0,20), Position = UDim2.fromOffset(10,4), BackgroundTransparency = 1,
-            Text = tostring(opts.Title or ""), TextColor3 = C.text, Font = Enum.Font.GothamBold, TextSize = 13,
-            TextXAlignment = Enum.TextXAlignment.Left }, row)
-        local box = mk("TextBox", { Size = UDim2.new(1,-20,0,26), Position = UDim2.fromOffset(10,26),
-            BackgroundColor3 = C.bg, Text = tostring(opts.Value or ""), PlaceholderText = tostring(opts.Placeholder or ""),
-            PlaceholderColor3 = C.sub, TextColor3 = C.text, Font = Enum.Font.Gotham, TextSize = 13,
-            TextXAlignment = Enum.TextXAlignment.Left, ClearTextOnFocus = false, BorderSizePixel = 0 }, row)
-        box:GetPropertyChangedSignal("Text"):Connect(function()
-            if opts.Callback then pcall(opts.Callback, box.Text) end
-        end)
-        return box
-    end
-
-    local function makeDropdown(par, opts)
-        local row = mk("Frame", { Size = UDim2.new(1,0,0,34), BackgroundColor3 = C.item, BorderSizePixel = 0 }, par)
-        rnd(row, 6)
-        local lbl = mk("TextLabel", { Size = UDim2.new(1,-40,1,0), Position = UDim2.fromOffset(10,0), BackgroundTransparency = 1,
-            Text = tostring(opts.Title or ""), TextColor3 = C.text, Font = Enum.Font.Gotham, TextSize = 13,
-            TextXAlignment = Enum.TextXAlignment.Left }, row)
-        local arrow = mk("TextButton", { Size = UDim2.new(1,0,1,0), BackgroundTransparency = 1, Text = "v",
-            TextColor3 = C.sub, Font = Enum.Font.GothamBold, TextSize = 13 }, row)
-        arrow.Text = ""
-        local values = {}
-        for _, v in ipairs(opts.Values or {}) do values[#values + 1] = v end
-        local current = opts.Value
-        if type(current) == "table" then current = current[1] end
-        local obj = { Value = current }
-        local list = nil
-        local function closeList()
-            if list then list:Destroy(); list = nil end
-        end
-        local function refreshLabel()
-            if type(obj.Value) == "table" then
-                lbl.Text = tostring(opts.Title or "") .. " (" .. #obj.Value .. ")"
-            else
-                lbl.Text = tostring(opts.Title or "") .. ": " .. tostring(obj.Value or "-")
+    local errs = {}
+    for _, u in ipairs(urls) do
+        local s = httpGetText(u, 200000)
+        if type(s) == "string" and #s > 200000 then
+            local ok, r = pcall(function() return loadstring(s)() end)
+            if ok and type(r) == "table" and type(r.CreateWindow) == "function" then
+                WindUI = r
+                print("[Hub] WindUI loaded: " .. #s .. " bytes")
+                break
             end
+            errs[#errs + 1] = u .. " parse: " .. tostring(r)
+        else
+            errs[#errs + 1] = u .. " download (" .. tostring(s and #s or 0) .. "b)"
         end
-        function obj:Refresh(v)
-            values = {}
-            for _, x in ipairs(v or {}) do values[#values + 1] = x end
-            refreshLabel()
-        end
-        function obj:Select(v)
-            obj.Value = v
-            refreshLabel()
-        end
-        arrow.MouseButton1Click:Connect(function()
-            if list then closeList(); return end
-            list = mk("ScrollingFrame", { Size = UDim2.new(1,0,0,math.min(#values * 26 + 8, 160)),
-                Position = UDim2.new(0,0,1,4), BackgroundColor3 = C.panel, BorderSizePixel = 0,
-                ScrollBarThickness = 4, CanvasSize = UDim2.new(0,0,0,0), AutomaticCanvasSize = Enum.AutomaticSize.Y }, row)
-            rnd(list, 6)
-            mk("UIPadding", { PaddingTop = UDim.new(0,4), PaddingLeft = UDim.new(0,4), PaddingRight = UDim.new(0,4), PaddingBottom = UDim.new(0,4) }, list)
-            mk("UIListLayout", { Padding = UDim.new(0,2), SortOrder = Enum.SortOrder.LayoutOrder }, list)
-            for i, v in ipairs(values) do
-                local item = mk("TextButton", { Size = UDim2.new(1,0,0,24), BackgroundColor3 = C.item,
-                    Text = "  " .. tostring(v), TextColor3 = C.text, Font = Enum.Font.Gotham, TextSize = 12,
-                    TextXAlignment = Enum.TextXAlignment.Left, BorderSizePixel = 0, LayoutOrder = i }, list)
-                rnd(item, 4)
-                item.MouseButton1Click:Connect(function()
-                    obj.Value = v
-                    refreshLabel()
-                    closeList()
-                    if opts.Callback then pcall(opts.Callback, v) end
-                end)
-            end
-        end)
-        refreshLabel()
-        return obj
     end
-
-    local function makeSlider(par, opts)
-        local row = mk("Frame", { Size = UDim2.new(1,0,0,52), BackgroundColor3 = C.item, BorderSizePixel = 0 }, par)
-        rnd(row, 6)
-        local cfg = opts.Value or {}
-        local mn, mx = cfg.Min or 0, cfg.Max or 10
-        local cur = cfg.Default or mn
-        local lbl = mk("TextLabel", { Size = UDim2.new(1,-20,0,20), Position = UDim2.fromOffset(10,4), BackgroundTransparency = 1,
-            Text = tostring(opts.Title or "") .. "  [" .. tostring(cur) .. "]", TextColor3 = C.text,
-            Font = Enum.Font.Gotham, TextSize = 13, TextXAlignment = Enum.TextXAlignment.Left }, row)
-        local bar = mk("Frame", { Size = UDim2.new(1,-20,0,6), Position = UDim2.fromOffset(10,30),
-            BackgroundColor3 = C.off, BorderSizePixel = 0 }, row)
-        rnd(bar, 3)
-        local fill = mk("Frame", { Size = UDim2.new(0,0,1,0), BackgroundColor3 = C.accent, BorderSizePixel = 0 }, bar)
-        rnd(fill, 3)
-        local function setVal(v)
-            cur = math.clamp(v, mn, mx)
-            fill.Size = UDim2.new((cur - mn) / math.max(mx - mn, 0.0001), 0, 1, 0)
-            lbl.Text = tostring(opts.Title or "") .. "  [" .. tostring(cur) .. "]"
-        end
-        bar.InputBegan:Connect(function(inp)
-            if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
-                local conn
-                conn = UIS.InputChanged:Connect(function(x)
-                    if x.UserInputType == Enum.UserInputType.MouseMovement or x.UserInputType == Enum.UserInputType.Touch then
-                        local rel = (x.Position.X - bar.AbsolutePosition.X) / math.max(bar.AbsoluteSize.X, 1)
-                        setVal(mn + (mx - mn) * math.clamp(rel, 0, 1))
-                    end
-                end)
-                UIS.InputEnded:Connect(function(x)
-                    if x.UserInputType == Enum.UserInputType.MouseButton1 or x.UserInputType == Enum.UserInputType.Touch then
-                        if conn then conn:Disconnect() end
-                        if opts.Callback then pcall(opts.Callback, cur) end
-                    end
-                end)
-            end
-        end)
-        setVal(cur)
-        return { Value = cur }
-    end
-
-    local function makeParagraph(par, opts)
-        local row = mk("Frame", { Size = UDim2.new(1,0,0,40), BackgroundColor3 = C.item, BorderSizePixel = 0 }, par)
-        rnd(row, 6)
-        local t = mk("TextLabel", { Size = UDim2.new(1,-20,0,18), Position = UDim2.fromOffset(10,3), BackgroundTransparency = 1,
-            Text = tostring(opts.Title or ""), TextColor3 = C.text, Font = Enum.Font.GothamBold, TextSize = 12,
-            TextXAlignment = Enum.TextXAlignment.Left }, row)
-        local d = mk("TextLabel", { Size = UDim2.new(1,-20,0,16), Position = UDim2.fromOffset(10,21), BackgroundTransparency = 1,
-            Text = tostring(opts.Desc or ""), TextColor3 = C.sub, Font = Enum.Font.Gotham, TextSize = 11,
-            TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd }, row)
-        local obj = {}
-        function obj:SetTitle(v) t.Text = tostring(v or "") end
-        function obj:SetDesc(v) d.Text = tostring(v or "") end
-        function obj:Set(tbl)
-            if type(tbl) == "table" then
-                if tbl.Title then t.Text = tostring(tbl.Title) end
-                if tbl.Desc then d.Text = tostring(tbl.Desc) end
-            end
-        end
-        return obj
-    end
-
-    local function makeSection(par, opts)
-        local s = mk("TextLabel", { Size = UDim2.new(1,0,0,22), BackgroundTransparency = 1,
-            Text = tostring(opts.Title or ""), TextColor3 = C.accent, Font = Enum.Font.GothamBold, TextSize = 13,
-            TextXAlignment = Enum.TextXAlignment.Left }, par)
-        return s
-    end
-
-    function WindUI:CreateWindow()
-        local W = {}
-        local first = nil
-        function W:Tab(opts)
-            local btn = mk("TextButton", { Size = UDim2.new(1,0,0,32), BackgroundColor3 = C.item,
-                Text = "  " .. tostring(opts.Title or "Tab"), TextColor3 = C.text, Font = Enum.Font.GothamBold,
-                TextSize = 13, TextXAlignment = Enum.TextXAlignment.Left, BorderSizePixel = 0 }, tabCol)
-            rnd(btn, 6)
-            local frame = mk("ScrollingFrame", { Size = UDim2.new(1,0,1,0), BackgroundTransparency = 1, BorderSizePixel = 0,
-                ScrollBarThickness = 5, CanvasSize = UDim2.new(0,0,0,0), AutomaticCanvasSize = Enum.AutomaticSize.Y,
-                Visible = false }, content)
-            mk("UIListLayout", { Padding = UDim.new(0,6), SortOrder = Enum.SortOrder.LayoutOrder }, frame)
-            mk("UIPadding", { PaddingTop = UDim.new(0,8), PaddingLeft = UDim.new(0,10), PaddingRight = UDim.new(0,10), PaddingBottom = UDim.new(0,10) }, frame)
-            local tab = { frame = frame }
-            tabs[#tabs + 1] = tab
-            btn.MouseButton1Click:Connect(function()
-                for _, x in ipairs(tabs) do x.frame.Visible = false end
-                frame.Visible = true
-                btn.BackgroundColor3 = C.panel
-            end)
-            function tab:Section(o) return makeSection(frame, o or {}) end
-            function tab:Toggle(o) return makeToggle(frame, o or {}) end
-            function tab:Button(o) return makeButton(frame, o or {}) end
-            function tab:Input(o) return makeInput(frame, o or {}) end
-            function tab:Dropdown(o) return makeDropdown(frame, o or {}) end
-            function tab:Slider(o) return makeSlider(frame, o or {}) end
-            function tab:Paragraph(o) return makeParagraph(frame, o or {}) end
-            if not first then first = tab; frame.Visible = true end
-            return tab
-        end
-        function W:SetToggleKey(k)
-            UIS.InputBegan:Connect(function(inp, gp2)
-                if gp2 then return end
-                if inp.KeyCode == k then win.Visible = not win.Visible end
-            end)
-        end
-        W.SetTogleKey = W.SetToggleKey
-        function W:Destroy()
-            pcall(function() sg:Destroy() end)
-        end
-        return W
-    end
-
-    function WindUI:Notify(o)
-        local n = mk("Frame", { Size = UDim2.new(1,0,0,52), BackgroundColor3 = C.panel, BorderSizePixel = 0 }, notifCol)
-        rnd(n, 6)
-        mk("TextLabel", { Size = UDim2.new(1,-16,0,18), Position = UDim2.fromOffset(8,4), BackgroundTransparency = 1,
-            Text = tostring(o.Title or "Notify"), TextColor3 = C.text, Font = Enum.Font.GothamBold, TextSize = 13,
-            TextXAlignment = Enum.TextXAlignment.Left }, n)
-        mk("TextLabel", { Size = UDim2.new(1,-16,0,26), Position = UDim2.fromOffset(8,22), BackgroundTransparency = 1,
-            Text = tostring(o.Content or ""), TextColor3 = C.sub, Font = Enum.Font.Gotham, TextSize = 11,
-            TextXAlignment = Enum.TextXAlignment.Left, TextWrapped = true }, n)
-        task.delay(tonumber(o.Duration) or 4, function()
-            pcall(function() n:Destroy() end)
-        end)
+    if not WindUI then
+        return warn("[Hub] WindUI failed: " .. table.concat(errs, " | "))
     end
 end
 
@@ -2891,72 +2624,139 @@ safeToggle(MiscTab, {
 
 if State.MovingAround then task.defer(function() setMoving(true) end) end
 
-local function findAutoAbilityButtons()
-    local gui = getGui()
-    if not gui then return {} end
-    local found = {}
-    for _, d in ipairs(gui:GetDescendants()) do
-        if d:IsA("GuiButton") and d.Visible then
-            local t = tostring(safeText(d)):lower()
-            if t == "" then
-                for _, ch in ipairs(d:GetChildren()) do
-                    local ct = safeText(ch)
-                    if ct ~= "" then
-                        t = ct:lower()
-                        break
-                    end
-                end
-            end
-            local n = tostring(d.Name or ""):lower()
-            local isAuto = (t:find("auto", 1, true) and t:find("abil", 1, true))
-                or (n:find("auto", 1, true) and n:find("abil", 1, true))
-            if isAuto then
-                found[#found + 1] = { btn = d, text = t }
+-- === Auto Ability ===
+-- Returns true=ON, false=OFF, nil=unknown for an "AutoAbility" toggle button.
+local function abilityStateOf(btn)
+    if not btn or not btn.Parent then return nil end
+    local attrs = {
+        "Enabled", "enabled", "Active", "active", "On", "on",
+        "State", "state", "Toggled", "toggled", "AutoAbility", "IsOn", "Value",
+    }
+    for _, a in ipairs(attrs) do
+        local ok, v = pcall(function() return btn:GetAttribute(a) end)
+        if ok and v ~= nil then
+            if v == true then return true end
+            if v == false then return false end
+            if type(v) == "number" then return v ~= 0 end
+            if type(v) == "string" then
+                local s = v:lower()
+                if s == "on" or s == "true" or s == "enabled" or s == "1" then return true end
+                if s == "off" or s == "false" or s == "disabled" or s == "0" then return false end
             end
         end
     end
-    return found
+    local function fromText(t)
+        t = tostring(t or ""):lower()
+        if t == "" then return nil end
+        if t:find("off", 1, true) or t:find("disabled", 1, true) then return false end
+        if t:find("enabled", 1, true) then return true end
+        if t:find("%f[%a]on%f[%A]") then return true end
+        return nil
+    end
+    local st = fromText(safeText(btn))
+    if st ~= nil then return st end
+    for _, ch in ipairs(btn:GetDescendants()) do
+        st = fromText(safeText(ch))
+        if st ~= nil then return st end
+    end
+    return nil
+end
+
+-- Press a GUI button exactly ONCE. Never fire all signals: a toggle would flip twice.
+local function pressButtonOnce(btn)
+    if not btn or not btn.Parent then return false end
+    if type(firesignal) == "function" then
+        if pcall(firesignal, btn.MouseButton1Click) then return true end
+    end
+    if type(getconnections) == "function" then
+        local ok, conns = pcall(getconnections, btn.MouseButton1Click)
+        if ok and type(conns) == "table" and #conns > 0 then
+            for _, c in ipairs(conns) do
+                pcall(function()
+                    if type(c.Fire) == "function" then c:Fire()
+                    elseif type(c.Function) == "function" then c.Function() end
+                end)
+            end
+            return true
+        end
+    end
+    if type(btn.Activate) == "function" then
+        return (pcall(function() btn:Activate() end))
+    end
+    return false
+end
+
+-- Scans the whole UnitManager: covers both
+--   UnitManager.Handler.Frame.Units.<id>.AutoAbility
+--   UnitManager.Handler.Tower.AutoAbility
+local function getAutoAbilityButtons()
+    local gui = getGui()
+    if not gui then return {} end
+    local um = gui:FindFirstChild("UnitManager")
+    if not um then return {} end
+    local out = {}
+    for _, d in ipairs(um:GetDescendants()) do
+        if d:IsA("GuiButton") then
+            local n = tostring(d.Name or ""):lower()
+            if n:find("autoability", 1, true) or n:find("auto_ability", 1, true) then
+                out[#out + 1] = d
+            end
+        end
+    end
+    return out
+end
+
+local autoAbilityLastPress = setmetatable({}, { __mode = "k" })
+
+local function applyAutoAbility()
+    refreshObjects()
+
+    -- 1) remote first: explicit "enable" per owned tower
+    local remote = Remotes.ToggleAutoAbility
+    if remote and typeof(remote) == "Instance" and TowerDataFolder then
+        local useFireServer = type(remote.FireServer) == "function"
+        local useFire = (not useFireServer) and type(remote.Fire) == "function"
+        if useFireServer or useFire then
+            for _, t in ipairs(TowerDataFolder:GetChildren()) do
+                if own(t) and not State.AutoAbilityDone[t] then
+                    local okService = pcall(function()
+                        if useFireServer then
+                            remote:FireServer(tostring(t.Name), true)
+                        else
+                            remote:Fire(tostring(t.Name), true)
+                        end
+                    end)
+                    if okService then State.AutoAbilityDone[t] = true end
+                end
+            end
+        end
+    end
+
+    -- 2) GUI fallback: click only cards that are EXPLICITLY off
+    local buttons = getAutoAbilityButtons()
+    if #buttons == 0 then return end
+    local now = os.clock()
+    for _, btn in ipairs(buttons) do
+        local st = abilityStateOf(btn)
+        if st == false then
+            local last = autoAbilityLastPress[btn] or 0
+            if now - last >= 3 then
+                autoAbilityLastPress[btn] = now
+                if pressButtonOnce(btn) then
+                    warn("[Hub] AutoAbility: pressed " .. btn:GetFullName())
+                end
+            end
+        end
+    end
 end
 
 task.spawn(function()
     while State.Running do
         if State.AutoAbility then
-            refreshObjects()
-            if Remotes.ToggleAutoAbility and TowerDataFolder then
-                for _, t in ipairs(TowerDataFolder:GetChildren()) do
-                    if own(t) and not State.AutoAbilityDone[t] then
-                        State.AutoAbilityDone[t] = true
-                        pcall(function() Remotes.ToggleAutoAbility:FireServer(tostring(t.Name), true) end)
-                    end
-                end
-            end
-            local gui = getGui()
-            local um = gui and gui:FindFirstChild("UnitManager")
-            local handler = um and um:FindFirstChild("Handler")
-            local frame = handler and handler:FindFirstChild("Frame")
-            local units = frame and frame:FindFirstChild("Units")
-            local clicked = 0
-            if units then
-                for _, card in ipairs(units:GetChildren()) do
-                    local btn = card:FindFirstChild("AutoAbility")
-                    if btn and btn:IsA("GuiButton") and btn.Visible then
-                        local t = safeText(btn):lower()
-                        if t:find("off", 1, true) then
-                            tryFireBackButton(btn)
-                            clicked = clicked + 1
-                        end
-                    end
-                end
-            end
-            if clicked == 0 then
-                for _, item in ipairs(findAutoAbilityButtons()) do
-                    if item.text:find("off", 1, true) then
-                        tryFireBackButton(item.btn)
-                    end
-                end
-            end
+            local ok, err = pcall(applyAutoAbility)
+            if not ok then warn("[Hub] AutoAbility error: " .. tostring(err)) end
         end
-        humanDelay(0.8, 0.25)
+        humanDelay(0.9, 0.25)
     end
 end)
 
@@ -3070,7 +2870,10 @@ task.spawn(function()
             sendMatchEndWebhook()
 
             if State.PendingLobbyReturn then
-                task.spawn(function() forceReturnToLobby() end)
+                task.spawn(function()
+                    local okR, errR = pcall(forceReturnToLobby)
+                    if not okR then warn("[Hub] Return error: " .. tostring(errR)) end
+                end)
             end
 
             local shouldReplay = State.AutoReplay and not State.PendingLobbyReturn
