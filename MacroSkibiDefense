@@ -1,7 +1,3 @@
---[[
-    Skibidi Defense Hub
-    Author: oreshik :3
-]]
 if not game or not game.GetService then return warn("[Hub] Not a Roblox env") end
 
 local Players            = game:GetService("Players")
@@ -1876,19 +1872,20 @@ do
         "https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua",
         "https://cdn.jsdelivr.net/gh/Footagesus/WindUI@main/dist/main.lua",
     }
-    local src
+    local errs = {}
     for _, u in ipairs(urls) do
         local s = httpGetText(u)
-        if s then src = s; break end
+        if type(s) == "string" and #s > 100000 then
+            local ok, r = pcall(function() return loadstring(s)() end)
+            if ok and type(r) == "table" then WindUI = r; break end
+            errs[#errs + 1] = u .. " parse: " .. tostring(r)
+        else
+            errs[#errs + 1] = u .. " download (" .. tostring(s and #s or 0) .. "b)"
+        end
     end
-    if not src then
-        return warn("[Hub] WindUI download failed (no HTTP method/URL worked). Check your executor's HTTP.")
+    if not WindUI then
+        return warn("[Hub] WindUI failed: " .. table.concat(errs, " | "))
     end
-    local ok, r = pcall(function()
-        return loadstring(src)()
-    end)
-    if not ok then return warn("[Hub] WindUI run failed: " .. tostring(r)) end
-    WindUI = r
 end
 
 local Window
