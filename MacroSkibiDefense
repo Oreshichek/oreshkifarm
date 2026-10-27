@@ -1,3 +1,7 @@
+--[[
+    Skibidi Defense Hub
+    Author: oreshik :3
+]]
 if not game or not game.GetService then return warn("[Hub] Not a Roblox env") end
 
 local Players            = game:GetService("Players")
@@ -93,6 +97,7 @@ local State = {
     AutoSkip = false,
     AutoReplay = false,
     AutoSpeed = false,
+    AutoAbility = false,
     SpeedScaleDelay = 1,
     Speed = 1,
 
@@ -126,6 +131,8 @@ local State = {
     TowerMeta = setmetatable({}, { __mode = "k" }),
     RuntimeHandles = {},
     UsedRuntimeTowers = setmetatable({}, { __mode = "k" }),
+    AutoAbilityDone = setmetatable({}, { __mode = "k" }),
+    AutoAbilityCards = setmetatable({}, { __mode = "k" }),
     PendingAbilityClickAt = -math.huge,
     PendingAbilityIndex = 1,
     LastSelectedTower = nil,
@@ -156,6 +163,7 @@ local function refreshObjects()
     Remotes.BoostSelect   = ReplicatedStorage:FindFirstChild("BoostSelect")
     local ts              = ReplicatedStorage:FindFirstChild("TowerScript")
     Remotes.Ability       = ts   and ts:FindFirstChild("spawnTowerAbility")
+    Remotes.ToggleAutoAbility = ts and ts:FindFirstChild("ToggleAutoAbility")
     Remotes.Skip          = evF  and evF:FindFirstChild("waveSkip")
     Remotes.Replay        = evF  and evF:FindFirstChild("ReplayCore")
     Remotes.Ready         = gsF  and gsF:FindFirstChild("readyButton")
@@ -408,6 +416,14 @@ task.spawn(function()
 end)
 
 
+local function safeText(inst)
+    if inst and (inst:IsA("TextLabel") or inst:IsA("TextButton")) then
+        local ok, v = pcall(function() return inst.Text end)
+        if ok and type(v) == "string" then return v end
+    end
+    return ""
+end
+
 local function isBackLabel(s)
     s = tostring(s or ""):lower()
     return s:find("return", 1, true) or s:find("back", 1, true)
@@ -424,27 +440,34 @@ local function getBackButton()
         return s:find("return", 1, true) or s:find("to lobby", 1, true)
     end
     for _, d in ipairs(root:GetDescendants()) do
-        if d:IsA("GuiButton") and strongMatch(d.Text) then return d end
+        if d:IsA("GuiButton") and strongMatch(safeText(d)) then return d end
     end
     for _, d in ipairs(root:GetDescendants()) do
-        if d:IsA("TextLabel") and strongMatch(d.Text) and d.Parent and d.Parent:IsA("GuiButton") then
+        if d:IsA("TextLabel") and strongMatch(safeText(d)) and d.Parent and d.Parent:IsA("GuiButton") then
             return d.Parent
         end
+    end
+    local function nameStrong(s)
+        s = tostring(s or ""):lower()
+        return s:find("return", 1, true) or s:find("lobby", 1, true)
+    end
+    for _, d in ipairs(root:GetDescendants()) do
+        if d:IsA("GuiButton") and nameStrong(d.Name) then return d end
     end
     for _, d in ipairs(root:GetDescendants()) do
         if d:IsA("GuiButton") and isBackLabel(d.Name) then return d end
     end
     for _, d in ipairs(root:GetDescendants()) do
-        if d:IsA("GuiButton") and isBackLabel(d.Text) then return d end
+        if d:IsA("GuiButton") and isBackLabel(safeText(d)) then return d end
     end
     for _, d in ipairs(root:GetDescendants()) do
-        if d:IsA("TextLabel") and isBackLabel(d.Text) and d.Parent and d.Parent:IsA("GuiButton") then
+        if d:IsA("TextLabel") and isBackLabel(safeText(d)) and d.Parent and d.Parent:IsA("GuiButton") then
             return d.Parent
         end
     end
     if ge then
         for _, d in ipairs(gui:GetDescendants()) do
-            if d:IsA("GuiButton") and (isBackLabel(d.Name) or isBackLabel(d.Text)) then
+            if d:IsA("GuiButton") and (isBackLabel(d.Name) or isBackLabel(safeText(d))) then
                 return d
             end
         end
@@ -531,7 +554,7 @@ local function forceReturnToLobby()
         if btn then
             if not logged then
                 logged = true
-                warn("[Hub] Return: button " .. tostring(btn.Name) .. " (" .. btn.ClassName .. ")")
+                warn("[Hub] Return: " .. btn:GetFullName() .. " text=" .. tostring(safeText(btn)))
             end
             tryFireBackButton(btn)
         elseif not logged then
@@ -1624,6 +1647,7 @@ local function applyConfig()
     State.AutoReady = Config.AutoReady == true
     State.AutoSkip = Config.AutoSkip == true
     State.AutoSpeed = Config.AutoSpeed == true
+    State.AutoAbility = Config.AutoAbility == true
     State.SpeedScaleDelay = math.clamp(tonumber(Config.SpeedScaleDelay) or 1, 0.5, 10)
     State.MovingAround = Config.MovingAround == true
     State.AutoJoinMap = Config.AutoJoinMap == true
@@ -1660,7 +1684,7 @@ saveConfig = function()
     if not HAS_FS then return end
     local p = {
         AutoReplay = State.AutoReplay, AutoReady = State.AutoReady,
-        AutoSkip = State.AutoSkip, AutoSpeed = State.AutoSpeed,
+        AutoSkip = State.AutoSkip, AutoSpeed = State.AutoSpeed, AutoAbility = State.AutoAbility,
         SpeedScaleDelay = State.SpeedScaleDelay,
         MovingAround = State.MovingAround, AutoJoinMap = State.AutoJoinMap,
         LobbyMode = State.LobbyMode, LobbyChapter = State.LobbyChapter,
@@ -2565,6 +2589,12 @@ safeSlider(MiscTab, {
     Callback = function(v) State.SpeedScaleDelay = math.clamp(tonumber(v) or 1, 0.5, 10); queueSave() end,
 })
 
+safeSection(MiscTab, { Title = "Towers", Desc = "Auto ability" })
+safeToggle(MiscTab, {
+    Title = "Auto Ability (OFF -> ON)", Value = State.AutoAbility,
+    Callback = function(v) State.AutoAbility = v == true; queueSave() end,
+})
+
 safeSection(MiscTab, { Title = "Movement", Desc = "AntiKick" })
 safeToggle(MiscTab, {
     Title = "Moving Around (AntiKick)", Value = State.MovingAround,
@@ -2572,6 +2602,75 @@ safeToggle(MiscTab, {
 })
 
 if State.MovingAround then task.defer(function() setMoving(true) end) end
+
+local function findAutoAbilityButtons()
+    local gui = getGui()
+    if not gui then return {} end
+    local found = {}
+    for _, d in ipairs(gui:GetDescendants()) do
+        if d:IsA("GuiButton") and d.Visible then
+            local t = tostring(safeText(d)):lower()
+            if t == "" then
+                for _, ch in ipairs(d:GetChildren()) do
+                    local ct = safeText(ch)
+                    if ct ~= "" then
+                        t = ct:lower()
+                        break
+                    end
+                end
+            end
+            local n = tostring(d.Name or ""):lower()
+            local isAuto = (t:find("auto", 1, true) and t:find("abil", 1, true))
+                or (n:find("auto", 1, true) and n:find("abil", 1, true))
+            if isAuto then
+                found[#found + 1] = { btn = d, text = t }
+            end
+        end
+    end
+    return found
+end
+
+task.spawn(function()
+    while State.Running do
+        if State.AutoAbility then
+            refreshObjects()
+            if Remotes.ToggleAutoAbility and TowerDataFolder then
+                for _, t in ipairs(TowerDataFolder:GetChildren()) do
+                    if own(t) and not State.AutoAbilityDone[t] then
+                        State.AutoAbilityDone[t] = true
+                        pcall(function() Remotes.ToggleAutoAbility:FireServer(tostring(t.Name), true) end)
+                    end
+                end
+            end
+            local gui = getGui()
+            local um = gui and gui:FindFirstChild("UnitManager")
+            local handler = um and um:FindFirstChild("Handler")
+            local frame = handler and handler:FindFirstChild("Frame")
+            local units = frame and frame:FindFirstChild("Units")
+            local clicked = 0
+            if units then
+                for _, card in ipairs(units:GetChildren()) do
+                    local btn = card:FindFirstChild("AutoAbility")
+                    if btn and btn:IsA("GuiButton") and btn.Visible then
+                        local t = safeText(btn):lower()
+                        if t:find("off", 1, true) then
+                            tryFireBackButton(btn)
+                            clicked = clicked + 1
+                        end
+                    end
+                end
+            end
+            if clicked == 0 then
+                for _, item in ipairs(findAutoAbilityButtons()) do
+                    if item.text:find("off", 1, true) then
+                        tryFireBackButton(item.btn)
+                    end
+                end
+            end
+        end
+        humanDelay(0.8, 0.25)
+    end
+end)
 
 if State.ProfileName ~= "" then
     local ok = loadProfile(State.ProfileName)
@@ -2617,6 +2716,7 @@ task.spawn(function()
             wasReady = false
             speedReadySince = nil
             startupSpeedReset = false
+            State.AutoAbilityDone = setmetatable({}, { __mode = "k" })
         elseif not wasReady then
             wasReady = true
             speedReadySince = nil
