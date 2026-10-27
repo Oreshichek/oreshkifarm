@@ -2772,6 +2772,45 @@ if State.PlaybackEnabled and #State.Actions > 0 then
 end
 
 
+-- === Auto Ready Up ===
+-- Fires the ready remote AND clicks the on-screen ready button as a fallback.
+local function findReadyButton()
+    local gui = getGui()
+    if not gui then return nil end
+    for _, d in ipairs(gui:GetDescendants()) do
+        if d:IsA("GuiButton") and d.Visible then
+            local t = tostring(safeText(d)):lower()
+            if t ~= "" and (t:find("click to start", 1, true)
+                or t:find("ready", 1, true)
+                or t:find("start", 1, true)) then
+                return d
+            end
+            local n = tostring(d.Name or ""):lower()
+            if n:find("ready", 1, true) or n:find("start", 1, true) then
+                return d
+            end
+        end
+    end
+    return nil
+end
+
+local function tryReadyUp(allowClick)
+    local fired = false
+    local r = Remotes.Ready
+    if r and typeof(r) == "Instance" then
+        if type(r.FireServer) == "function" then
+            if pcall(function() r:FireServer(true) end) then fired = true end
+        elseif type(r.Fire) == "function" then
+            if pcall(function() r:Fire(true) end) then fired = true end
+        end
+    end
+    if allowClick then
+        local btn = findReadyButton()
+        if btn and pressButtonOnce(btn) then fired = true end
+    end
+    return fired
+end
+
 State.AutomationSession = State.AutomationSession + 1
 local automationSession = State.AutomationSession
 
@@ -2784,6 +2823,7 @@ task.spawn(function()
     local replayLatched = false
     local restartAfterReplay = false
     local replayRetryAt = 0
+    local readyWarned = false
 
     while State.Running and automationSession == State.AutomationSession do
         local now = os.clock()
@@ -2815,11 +2855,12 @@ task.spawn(function()
             Gui.StartEnabledPlayback()
         end
 
-        if State.AutoReady and not ended and Remotes.Ready
-            and not State.Playing
-            and now - lastReady >= rand(1.5, 3) then
+        if State.AutoReady and not ended and now - lastReady >= rand(1.2, 2.2) then
             lastReady = now
-            pcall(function() Remotes.Ready:FireServer(true) end)
+            if not tryReadyUp(not mr) and not readyWarned then
+                readyWarned = true
+                warn("[Hub] AutoReady: ready button/remote not found")
+            end
         end
 
         if mr and macroPrep and not macroAuto
