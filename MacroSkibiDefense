@@ -511,7 +511,8 @@ local function tryFireBackButton(btn)
             end
         end
     end
-    if type(btn.Activate) == "function" then
+    local okAct, actFn = pcall(function() return btn.Activate end)
+    if okAct and type(actFn) == "function" then
         pcall(function() btn:Activate() end)
         tried = true
     end
@@ -579,7 +580,8 @@ local function forceReturnToLobby()
                 logged = true
                 warn("[Hub] Return: " .. btn:GetFullName() .. " text=" .. tostring(safeText(btn)))
             end
-            tryFireBackButton(btn)
+            local okFire, fireErr = pcall(tryFireBackButton, btn)
+            if not okFire then warn("[Hub] Return click error: " .. tostring(fireErr)) end
         elseif not logged then
             logged = true
             warn("[Hub] Return: button not found (waiting)")
@@ -2680,7 +2682,8 @@ local function pressButtonOnce(btn)
             return true
         end
     end
-    if type(btn.Activate) == "function" then
+    local okAct, actFn = pcall(function() return btn.Activate end)
+    if okAct and type(actFn) == "function" then
         return (pcall(function() btn:Activate() end))
     end
     return false
