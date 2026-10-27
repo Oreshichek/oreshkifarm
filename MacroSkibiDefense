@@ -1,3 +1,7 @@
+--[[
+    Skibidi Defense Hub
+    Author: oreshik :3
+]]
 if not game or not game.GetService then return warn("[Hub] Not a Roblox env") end
 
 local Players            = game:GetService("Players")
@@ -1816,11 +1820,9 @@ if not table.find(initChapters, State.LobbyChapter) then
     State.LobbyChapter = initChapters[1] or "Chapter 1"
 end
 
-local function httpGetText(url)
+local function httpGetText(url, minSize)
+    minSize = minSize or 100
     local candidates = {}
-    if game and type(game.HttpGet) == "function" then
-        candidates[#candidates + 1] = { name = "game:HttpGet", fn = function() return game:HttpGet(url) end }
-    end
     if syn and type(syn.request) == "function" then
         candidates[#candidates + 1] = { name = "syn.request", fn = function()
             local r = syn.request({ Url = url, Method = "GET" })
@@ -1857,13 +1859,18 @@ local function httpGetText(url)
             return (type(r) == "table" and r.Body) or r
         end }
     end
+    if game and type(game.HttpGet) == "function" then
+        candidates[#candidates + 1] = { name = "game:HttpGet", fn = function() return game:HttpGet(url) end }
+    end
+    local best, bestName = nil, nil
     for _, m in ipairs(candidates) do
         local ok, body = pcall(m.fn)
-        if ok and type(body) == "string" and #body > 100 then
-            return body, m.name
+        if ok and type(body) == "string" and #body > 0 then
+            if #body >= minSize then return body, m.name end
+            if not best or #body > #best then best, bestName = body, m.name end
         end
     end
-    return nil, nil
+    return best, bestName
 end
 
 local WindUI
@@ -1874,8 +1881,8 @@ do
     }
     local errs = {}
     for _, u in ipairs(urls) do
-        local s = httpGetText(u)
-        if type(s) == "string" and #s > 100000 then
+        local s = httpGetText(u, 1000000)
+        if type(s) == "string" and #s > 1000000 then
             local ok, r = pcall(function() return loadstring(s)() end)
             if ok and type(r) == "table" then WindUI = r; break end
             errs[#errs + 1] = u .. " parse: " .. tostring(r)
