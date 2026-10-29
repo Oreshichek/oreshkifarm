@@ -12,7 +12,11 @@ local PathfindingService = game:GetService("PathfindingService")
 local UserInputService   = game:GetService("UserInputService")
 
 local LocalPlayer = Players.LocalPlayer
-local Environment = getgenv()
+
+local Environment = (type(getgenv) == "function" and getgenv()) or _G
+
+local IS_MOBILE = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+local LOOP_SCALE = IS_MOBILE and 2 or 1
 
 do
     local prev = Environment.SkibidiDefenseHub
@@ -98,6 +102,11 @@ local State = {
     AutoReplay = false,
     AutoSpeed = false,
     AutoAbility = false,
+    AutoOpenDoors = false,
+    DoorCooldown = 12,
+    DoorStop = false,
+    DoorLimit = 30,
+    DoorCount = 0,
     SpeedScaleDelay = 1,
     Speed = 1,
 
@@ -411,7 +420,7 @@ end
 task.spawn(function()
     while State.Running do
         installAbilityClickHook()
-        humanDelay(0.5, 0.1)
+        humanDelay(0.5 * LOOP_SCALE, 0.1)
     end
 end)
 
@@ -516,25 +525,8 @@ local function tryFireBackButton(btn)
         pcall(function() btn:Activate() end)
         tried = true
     end
-    local pos = btn.AbsolutePosition + btn.AbsoluteSize * 0.5
-    if type(VirtualUser) == "table" then
-        pcall(function() VirtualUser:CaptureController() end)
-        if type(VirtualUser.MoveMouse) == "function" then
-            pcall(function() VirtualUser:MoveMouse(pos.X, pos.Y) end)
-        end
-        if type(VirtualUser.MouseButton1Click) == "function" then
-            pcall(function() VirtualUser:MouseButton1Click(pos.X, pos.Y) end)
-            tried = true
-        end
-    end
-    if type(mousemoveabs) == "function" then
-        pcall(mousemoveabs, pos.X, pos.Y)
-        tried = true
-    end
-    if type(mouse1click) == "function" then
-        pcall(mouse1click)
-        tried = true
-    end
+    -- No mouse movement here: moving the real cursor into a screen corner is
+    -- intrusive and unnecessary - signal firing above is enough.
     return tried
 end
 
@@ -542,9 +534,7 @@ local saveConfig
 local newProfileName
 local newPlayerName
 
--- Real lobby detection. "not gameEnded()" alone is NOT proof: the end screen is
--- hidden as soon as a replay starts, which reset the counter without ever
--- reaching the lobby (the "after X matches it never returns" bug).
+-- Lobby detection: the end screen alone is not proof, it is hidden on replay too.
 local function lobbyReached(startJob, startPlace)
     if game.PlaceId == LOBBY_PLACE_ID then return true end
     if startPlace and game.PlaceId ~= startPlace then return true end
@@ -1661,6 +1651,8 @@ local function applyConfig()
     State.AutoSkip = Config.AutoSkip == true
     State.AutoSpeed = Config.AutoSpeed == true
     State.AutoAbility = Config.AutoAbility == true
+    State.AutoOpenDoors = Config.AutoOpenDoors == true
+    State.DoorCooldown = math.clamp(tonumber(Config.DoorCooldown) or 12, 1, 30)
     State.SpeedScaleDelay = math.clamp(tonumber(Config.SpeedScaleDelay) or 1, 0.5, 10)
     State.MovingAround = Config.MovingAround == true
     State.AutoJoinMap = Config.AutoJoinMap == true
@@ -1698,6 +1690,8 @@ saveConfig = function()
     local p = {
         AutoReplay = State.AutoReplay, AutoReady = State.AutoReady,
         AutoSkip = State.AutoSkip, AutoSpeed = State.AutoSpeed, AutoAbility = State.AutoAbility,
+        AutoOpenDoors = State.AutoOpenDoors,
+        DoorCooldown = State.DoorCooldown,
         SpeedScaleDelay = State.SpeedScaleDelay,
         MovingAround = State.MovingAround, AutoJoinMap = State.AutoJoinMap,
         LobbyMode = State.LobbyMode, LobbyChapter = State.LobbyChapter,
@@ -1733,21 +1727,43 @@ local ModeChapters = {
         "Chapter 5", "Chapter 6", "Chapter 7", "Chapter 8", "Chapter 9",
     },
     Multiverse = {
-        "Multiverse Chapter 1", "Multiverse Chapter 2", "Multiverse Chapter 3",
+        "Multiverse Chapter 1 Appearance",
+        "Multiverse Chapter 2 Rescue Mission",
+        "Multiverse Chapter 3 Revenge",
     },
     Nightmare = {
-        "Suspicious Detections", "Rise Of The Corruption", "Spreaded Corruption",
-        "A Fight From the Past", "Land of Creation", "The Final Showdown",
-        "The Last Base", "Civil War",
+        "Suspicious Detections Nightmare Chapter 1",
+        "Rise Of The Corruption Nightmare Chapter 2",
+        "Spreaded Corruption Nightmare Chapter 3",
+        "A Fight From the Past Nightmare Chapter 4",
+        "Land of Creation Nightmare Chapter 5",
+        "The Final Showdown Nightmare Chapter 6",
+        "The Last Base Nightmare Chapter 7",
+        "Civil War Nightmare Chapter 8",
+        "Void Nightmare Chapter 9",
     },
-    Event = { "Partner Takeover", "Skibi Trials" },
+    Event = {
+        "Act 1 2026 Rocket Arena",
+        "Act 2 2026 Converged Time",
+        "Act 3 2026 (Coming Soon)",
+        "Act -1 A Fight from the Past?",
+        "Act -2 The Memories of the Past?",
+        "Partner Takeover",
+        "Skibi Trials",
+    },
     Versus = { "Versus 1v1", "Versus 2v2", "Versus 3v3", "Versus 4v4" },
     Endless = { "Normal", "Roguelite" },
-    Episodes = { "Episode 79" },
-    Raid = { "WorldRaid" },
 }
 for modeName, chapters in pairs(ModeChapters) do
     ModeChapters[modeName] = removeDuplicates(chapters)
+end
+
+-- Act 1 / Act 2 events are HARD MODE only (own units only).
+local function isActChapter(ch)
+    ch = tostring(ch or ""):lower()
+    return ch:find("act 1", 1, true) ~= nil
+        or ch:find("act 2", 1, true) ~= nil
+        or ch:find("act 3", 1, true) ~= nil
 end
 
 local LobbyModifierIds = {
@@ -1886,8 +1902,7 @@ local function httpGetText(url, minSize)
     return best, bestName
 end
 
--- WindUI from the RELEASE asset (274 KB). The repo dist/main.lua is 1.35 MB and
--- gets truncated by executors with a ~1 MB download cap -> INCOMPLETE STATEMENT.
+-- WindUI release build first, repo dist as a fallback.
 local WindUI
 do
     local urls = {
@@ -1920,7 +1935,7 @@ do
         return WindUI:CreateWindow({
             Title = "Skibidi Defense Hub", Author = "oreshik :3",
             Folder = "SkibidiDefenseHub", Icon = "clapperboard", Theme = "Dark",
-            Size = UDim2.fromOffset(620, 480), Transparent = true, HideSearchBar = true,
+            Size = IS_MOBILE and UDim2.fromOffset(500, 360) or UDim2.fromOffset(620, 480), Transparent = true, HideSearchBar = true,
             NewElements = true, ToggleKey = Enum.KeyCode.RightShift,
             OpenButton = { Title = "Skibidi Defense Hub", Enabled = true, Draggable = true, OnlyMobile = false },
         })
@@ -1963,8 +1978,10 @@ local function safeParagraph(t, o) if not t then return nil end; local ok, r = p
 
 local LobbyTab   = safeTab(Window, { Title = "Lobby", Icon = "house" })
 local MacrosTab  = safeTab(Window, { Title = "Macros", Icon = "clapperboard" })
+local IOTab      = safeTab(Window, { Title = "Import/Export", Icon = "clipboard" })
 local PlayerTab  = safeTab(Window, { Title = "Player Actions", Icon = "user" })
 local MiscTab    = safeTab(Window, { Title = "Misc", Icon = "settings" })
+local PlazaTab   = safeTab(Window, { Title = "Plaza", Icon = "map" })
 local WebhookTab = safeTab(Window, { Title = "Webhook", Icon = "webhook" })
 
 local Gui = {}
@@ -2001,8 +2018,7 @@ local modeDropdown
 modeDropdown = safeDropdown(LobbyTab, {
     Title = "Mode",
     Values = {
-        "Story", "Multiverse", "Nightmare", "Event", "Versus", "Endless", "Episodes", "Raid", "All",
-        "Act 2 2026 (Coming Soon)", "Act 3 2026 (Coming Soon)",
+        "Story", "Multiverse", "Nightmare", "Event", "Versus", "Endless", "All",
     },
     Value = State.LobbyMode, Multi = false,
     Callback = function(v)
@@ -2027,7 +2043,22 @@ modeDropdown = safeDropdown(LobbyTab, {
 
 chapterDropdown = safeDropdown(LobbyTab, {
     Title = "Chapter", Values = initChapters, Value = State.LobbyChapter, Multi = false,
-    Callback = function(v) State.LobbyChapter = v; State.JoinRequested = false; queueSave() end,
+    Callback = function(v)
+        if type(v) == "string" and v:find("(Coming Soon)", 1, true) then
+            notify("Coming Soon", v .. " - not released yet.")
+            return
+        end
+        State.LobbyChapter = v
+        State.JoinRequested = false
+        queueSave()
+        if isActChapter(v) then
+            notify("Act event", "HARD MODE only - the hub forces it and uses your own units.")
+        end
+    end,
+})
+safeParagraph(LobbyTab, {
+    Title = "Act 1 / Act 2 = HARD MODE",
+    Desc = "Event acts allow only your own units and require HARD MODE. When an Act is selected the hub automatically turns HARD MODE on.",
 })
 
 safeToggle(LobbyTab, {
@@ -2140,7 +2171,7 @@ task.spawn(function()
             end
             end
         end
-        humanDelay(0.9, 0.3)
+        humanDelay(0.9 * LOOP_SCALE, 0.3)
     end
 end)
 
@@ -2168,6 +2199,292 @@ safeButton(WebhookTab, {
     end,
 })
 
+
+-- === Plaza doors ===
+-- PRIVATE SERVERS ONLY. The hub walks to each door and holds E like a player:
+-- no teleport, no mass remote triggering. Automation is never 100% safe.
+local Doors = { List = {}, LastScan = 0, Busy = false, LastOpen = setmetatable({}, { __mode = "k" }) }
+
+local function doorish(t)
+    t = tostring(t or ""):lower()
+    return t:find("door", 1, true) ~= nil
+        or t:find("gate", 1, true) ~= nil
+        or t:find("knock", 1, true) ~= nil
+        or t:find("unlock", 1, true) ~= nil
+        or t:find("enter", 1, true) ~= nil
+end
+
+local function scanDoors(force)
+    local now = os.clock()
+    if not force and #Doors.List > 0 and now - Doors.LastScan < 15 then
+        return Doors.List
+    end
+    Doors.LastScan = now
+    local list = {}
+    local ok, desc = pcall(function() return Workspace:GetDescendants() end)
+    if ok and type(desc) == "table" then
+        for _, d in ipairs(desc) do
+            if d:IsA("ProximityPrompt") then
+                local pn = d.Parent and tostring(d.Parent.Name) or ""
+                local txt = tostring(d.ActionText or "") .. " " .. tostring(d.ObjectText or "")
+                if doorish(txt) or doorish(pn) then
+                    list[#list + 1] = { prompt = d, part = d.Parent }
+                end
+            elseif d:IsA("ClickDetector") then
+                local pn = d.Parent and tostring(d.Parent.Name) or ""
+                if doorish(pn) then
+                    list[#list + 1] = { click = d, part = d.Parent }
+                end
+            end
+        end
+    end
+    Doors.List = list
+    return list
+end
+
+local function doorPos(d)
+    local p = d.part
+    if not p then return nil end
+    if p:IsA("Attachment") then return p.WorldPosition end
+    if p:IsA("BasePart") then return p.Position end
+    if p:IsA("Model") then
+        local ok, cf = pcall(function() return p:GetBoundingBox() end)
+        if ok then return cf.Position end
+    end
+    return nil
+end
+
+local function rootPos()
+    local c = LocalPlayer.Character
+    local r = c and c:FindFirstChild("HumanoidRootPart")
+    return r and r.Position or nil
+end
+
+local function fireClick(cd)
+    if not cd or not cd.Parent then return false end
+    if type(fireclickdetector) == "function" then
+        return (pcall(fireclickdetector, cd))
+    end
+    return false
+end
+
+-- === Teleport knock (rewards need a long cooldown; 12 s works) ===
+local function doorCamLook(cam, pos)
+    if not cam or not pos then return end
+    local rp = rootPos()
+    if not rp then return end
+    -- Put the camera where the player's head is and look at the door. That is
+    -- exactly the view a real player has, so the prompt's line-of-sight passes
+    -- and the camera never ends up inside the ceiling/wall.
+    local head = rp + Vector3.new(0, 2, 0)
+    pcall(function()
+        cam.CameraType = Enum.CameraType.Scriptable
+        cam.CFrame = CFrame.lookAt(head, pos)
+    end)
+end
+
+-- Hard camera reset: always hand control back to the default camera and put it
+-- behind the character, otherwise the screen can stay black inside a wall.
+local function doorCamReset()
+    local cam = Workspace.CurrentCamera
+    if not cam then return end
+    local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    pcall(function()
+        cam.CameraType = Enum.CameraType.Custom
+        if root then
+            cam.CFrame = CFrame.lookAt(root.Position + Vector3.new(0, 6, 10), root.Position)
+        end
+    end)
+end
+
+local function teleportFrontOf(pos, dist)
+    local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not root or not pos then return false end
+    local rp = root.Position
+    local dir = rp - pos
+    dir = Vector3.new(dir.X, 0, dir.Z)
+    if dir.Magnitude < 0.5 then dir = Vector3.new(0, 0, 1) else dir = dir.Unit end
+
+    -- Stand on the FLOOR in front of the door: teleporting to the door part
+    -- itself can put the character (and camera) inside the door model.
+    local flat = pos + dir * (dist or 1.6)
+    local rayParams = RaycastParams.new()
+    rayParams.FilterType = Enum.RaycastFilterType.Exclude
+    rayParams.FilterDescendantsInstances = { LocalPlayer.Character }
+    local okRay, hit = pcall(function()
+        return Workspace:Raycast(flat + Vector3.new(0, 6, 0), Vector3.new(0, -40, 0), rayParams)
+    end)
+    local floorY = (okRay and hit and hit.Position.Y) or (pos.Y - 2.5)
+    local stand = Vector3.new(flat.X, floorY + 3, flat.Z)
+    local look = Vector3.new(pos.X, stand.Y, pos.Z)
+
+    return (pcall(function()
+        root.CFrame = CFrame.lookAt(stand, look)
+        if root.AssemblyLinearVelocity then root.AssemblyLinearVelocity = Vector3.zero end
+        root.Velocity = Vector3.zero
+    end))
+end
+
+local function knockPrompt(p)
+    if not p or not p.Parent then return false end
+    -- Line of sight is a client-side gate; turning it off lets the prompt
+    -- activate even if the camera is not perfectly aimed at the door.
+    pcall(function()
+        p.RequiresLineOfSight = false
+        p.Enabled = true
+    end)
+    local fired = false
+    if type(fireproximityprompt) == "function" then
+        if pcall(fireproximityprompt, p) then fired = true end
+    end
+    pcall(function() p:InputHoldBegin() end)
+    task.wait(tonumber(p.HoldDuration) or 0.25)
+    pcall(function() p:InputHoldEnd() end)
+    return fired
+end
+
+local setDoorToggle          -- forward declaration, assigned when the UI is built
+local updateDoorCounter      -- forward declaration, assigned when the UI is built
+
+-- Interruptible cooldown: stops immediately when the toggle is turned off.
+local function waitDoorCooldown(seconds)
+    local deadline = os.clock() + (seconds or 12)
+    while os.clock() < deadline do
+        if not State.Running or State.DoorStop then return false end
+        task.wait(0.15)
+    end
+    return true
+end
+
+local function teleportKnockAll()
+    if Doors.Busy then return end
+    Doors.Busy = true
+    State.DoorStop = false
+    task.spawn(function()
+        local cam = Workspace.CurrentCamera
+        local root0 = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        local startCF
+        if root0 then pcall(function() startCF = root0.CFrame end) end
+
+        local ok, err = pcall(function()
+            local list = scanDoors(true)
+            if #list == 0 then
+                notify("Doors", "No doors found")
+                return
+            end
+            local got = 0
+            local stopped = false
+            local limitHit = false
+            State.DoorCount = 0
+            if updateDoorCounter then updateDoorCounter("Working...") end
+            for i, d in ipairs(list) do
+                if not State.Running or State.DoorStop then stopped = true; break end
+                local pos = doorPos(d)
+                if pos then
+                    teleportFrontOf(pos, 1.6)
+                    task.wait(0.12)
+                    doorCamLook(cam, pos)
+                    task.wait(0.08)
+                    if State.DoorStop then stopped = true; break end
+                    if d.prompt then
+                        knockPrompt(d.prompt)
+                    elseif d.click then
+                        fireClick(d.click)
+                    end
+                    got = got + 1
+                    State.DoorCount = got
+                    if updateDoorCounter then
+                        updateDoorCounter(string.format("%d/%d (cooldown %ds)",
+                            got, State.DoorLimit, State.DoorCooldown))
+                    end
+                    setStatus("Doors", string.format("%d/%d knocked (cooldown %ds)", i, #list, State.DoorCooldown))
+                    if got >= State.DoorLimit then
+                        limitHit = true
+                        break
+                    end
+                end
+                -- reward needs time: wait the cooldown, but stay interruptible
+                if not waitDoorCooldown(State.DoorCooldown) then
+                    stopped = true
+                    break
+                end
+            end
+            if limitHit then
+                notify("Doors", string.format("Limit %d reached - auto stop", State.DoorLimit))
+                if updateDoorCounter then updateDoorCounter(string.format("Limit %d reached", State.DoorLimit)) end
+            elseif stopped then
+                notify("Doors", string.format("Stopped at %d door(s)", got))
+                if updateDoorCounter then updateDoorCounter("Stopped") end
+            else
+                notify("Doors", string.format("Knocked %d door(s)", got))
+                if updateDoorCounter then updateDoorCounter("Done") end
+            end
+        end)
+        if not ok then warn("[Hub] Doors error: " .. tostring(err)) end
+
+        doorCamReset()
+        if startCF then
+            local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if root then pcall(function() root.CFrame = startCF end) end
+        end
+        Doors.Busy = false
+        State.DoorStop = false
+        if setDoorToggle then setDoorToggle(false) end
+    end)
+end
+
+safeSection(PlazaTab, { Title = "Plaza Doors", Desc = "PRIVATE SERVERS ONLY" })
+safeParagraph(PlazaTab, {
+    Title = "Read first",
+    Desc = "Only on a PRIVATE server, not on your main account. The hub teleports to each door, faces it, aims the camera at it, knocks and waits the cooldown so the server can grant the reward. Teleporting is very obvious to the server - use at your own risk.",
+})
+local doorCounter = wrapParagraph(safeParagraph(PlazaTab, {
+    Title = "Doors: 0/" .. tostring(State.DoorLimit),
+    Desc = "Not started - auto-stops at the limit",
+}))
+
+updateDoorCounter = function(note)
+    if not doorCounter then return end
+    pcall(function()
+        doorCounter:SetTitle(string.format("Doors: %d/%d",
+            tonumber(State.DoorCount) or 0, tonumber(State.DoorLimit) or 30))
+        if note then doorCounter:SetDesc(tostring(note)) end
+    end)
+end
+
+safeInput(PlazaTab, {
+    Title = "Cooldown (s)", Placeholder = "12",
+    Value = tostring(State.DoorCooldown),
+    Callback = function(v)
+        local n = tonumber(tostring(v):match("%d+"))
+        if n then
+            State.DoorCooldown = math.clamp(n, 1, 30)
+            queueSave()
+        end
+    end,
+})
+local doorToggle
+local changingDoorToggle = false
+
+setDoorToggle = function(v)
+    if not doorToggle then return end
+    changingDoorToggle = true
+    pcall(function() doorToggle:Set(v) end)
+    changingDoorToggle = false
+end
+
+doorToggle = safeToggle(PlazaTab, {
+    Title = "Knock All Doors (teleport)", Value = false,
+    Callback = function(v)
+        if changingDoorToggle then return end
+        if v then
+            State.DoorStop = false
+            teleportKnockAll()
+        else
+            State.DoorStop = true
+        end
+    end,
+})
 
 safeSection(MacrosTab, { Title = "Macro State", Desc = "Recorder + playback" })
 Gui.Status = wrapParagraph(safeParagraph(MacrosTab, { Title = "State: Idle", Desc = "Waiting" }))
@@ -2235,7 +2552,21 @@ profileDropdown = safeDropdown(MacrosTab, {
     end,
 })
 
-safeButton(MacrosTab, {
+safeSection(IOTab, { Title = "Import / Export", Desc = "Copy a macro as JSON, paste it back" })
+safeParagraph(IOTab, {
+    Title = "MACRO = tower build",
+    Desc = "Records the tower actions of a run: place, upgrade, sell, target mode, ability and boost link. On playback the hub replays them like a tower builder. Best for one map / one build order.",
+})
+safeParagraph(IOTab, {
+    Title = "PLAYER MACRO = your own play",
+    Desc = "Records what YOU do as a player: placements, upgrades, abilities, speed changes and wave skips, with real timings. On playback it repeats your run almost exactly as you played it.",
+})
+safeParagraph(IOTab, {
+    Title = "How transfer works",
+    Desc = "Export copies the macro to the clipboard as JSON. Import reads the clipboard and loads it. Works between accounts and executors - the data is portable.",
+})
+
+safeButton(IOTab, {
     Title = "Export Macro (Copy)", Icon = "clipboard",
     Callback = function()
         if #State.Actions == 0 then notify("Export", "No actions"); return end
@@ -2245,7 +2576,7 @@ safeButton(MacrosTab, {
     end,
 })
 
-safeButton(MacrosTab, {
+safeButton(IOTab, {
     Title = "Import Macro (Paste)", Icon = "clipboard-paste",
     Callback = function()
         local clip = (type(getclipboard) == "function" and getclipboard()) or ""
@@ -2263,7 +2594,7 @@ safeButton(MacrosTab, {
     end,
 })
 
-safeButton(MacrosTab, {
+safeButton(IOTab, {
     Title = "Export Player Macro (Copy)", Icon = "user",
     Callback = function()
         if #State.PlayerActions == 0 then notify("Export", "None"); return end
@@ -2273,7 +2604,7 @@ safeButton(MacrosTab, {
     end,
 })
 
-safeButton(MacrosTab, {
+safeButton(IOTab, {
     Title = "Import Player Macro (Paste)", Icon = "user-check",
     Callback = function()
         local clip = (type(getclipboard) == "function" and getclipboard()) or ""
@@ -2583,7 +2914,7 @@ task.spawn(function()
             playerRuntime:SetDesc(string.format("Wave %d | Money %d | %s | Base %s | Speed x%d",
                 getWave(), getMoney(), getUnitText(), getBaseHp(), State.Speed))
         end
-        humanDelay(0.6, 0.2)
+        humanDelay(0.6 * LOOP_SCALE, 0.2)
     end
 end)
 
@@ -2692,33 +3023,52 @@ end
 -- Scans the whole UnitManager: covers both
 --   UnitManager.Handler.Frame.Units.<id>.AutoAbility
 --   UnitManager.Handler.Tower.AutoAbility
+local autoAbilityCache, autoAbilityCacheAt = {}, 0
+
 local function getAutoAbilityButtons()
-    local gui = getGui()
-    if not gui then return {} end
-    local um = gui:FindFirstChild("UnitManager")
-    if not um then return {} end
+    local now = os.clock()
+    if #autoAbilityCache > 0 and now - autoAbilityCacheAt < 5 * LOOP_SCALE then
+        local alive = true
+        for _, b in ipairs(autoAbilityCache) do
+            if not b.Parent then alive = false; break end
+        end
+        if alive then return autoAbilityCache end
+    end
+    autoAbilityCacheAt = now
     local out = {}
-    for _, d in ipairs(um:GetDescendants()) do
-        if d:IsA("GuiButton") then
-            local n = tostring(d.Name or ""):lower()
-            if n:find("autoability", 1, true) or n:find("auto_ability", 1, true) then
-                out[#out + 1] = d
+    local gui = getGui()
+    local um = gui and gui:FindFirstChild("UnitManager")
+    if um then
+        for _, d in ipairs(um:GetDescendants()) do
+            if d:IsA("GuiButton") then
+                local n = tostring(d.Name or ""):lower()
+                if n:find("autoability", 1, true) or n:find("auto_ability", 1, true) then
+                    out[#out + 1] = d
+                end
             end
         end
     end
+    autoAbilityCache = out
     return out
 end
 
 local autoAbilityLastPress = setmetatable({}, { __mode = "k" })
+local autoAbilityRefreshAt = 0
 
 local function applyAutoAbility()
-    refreshObjects()
+    local nowR = os.clock()
+    if nowR - autoAbilityRefreshAt >= 5 * LOOP_SCALE then
+        autoAbilityRefreshAt = nowR
+        refreshObjects()
+    end
 
     -- 1) remote first: explicit "enable" per owned tower
     local remote = Remotes.ToggleAutoAbility
     if remote and typeof(remote) == "Instance" and TowerDataFolder then
-        local useFireServer = type(remote.FireServer) == "function"
-        local useFire = (not useFireServer) and type(remote.Fire) == "function"
+        local okFS, fs = pcall(function() return remote.FireServer end)
+        local useFireServer = okFS and type(fs) == "function"
+        local okF, ff = pcall(function() return remote.Fire end)
+        local useFire = (not useFireServer) and okF and type(ff) == "function"
         if useFireServer or useFire then
             for _, t in ipairs(TowerDataFolder:GetChildren()) do
                 if own(t) and not State.AutoAbilityDone[t] then
@@ -2759,7 +3109,7 @@ task.spawn(function()
             local ok, err = pcall(applyAutoAbility)
             if not ok then warn("[Hub] AutoAbility error: " .. tostring(err)) end
         end
-        humanDelay(0.9, 0.25)
+        humanDelay(0.9 * LOOP_SCALE, 0.25)
     end
 end)
 
@@ -2777,7 +3127,17 @@ end
 
 -- === Auto Ready Up ===
 -- Fires the ready remote AND clicks the on-screen ready button as a fallback.
+local readyBtnCache, readyBtnCacheAt = nil, 0
+
 local function findReadyButton()
+    if readyBtnCache and readyBtnCache.Parent and readyBtnCache.Visible then
+        return readyBtnCache
+    end
+    local now = os.clock()
+    if readyBtnCacheAt > 0 and now - readyBtnCacheAt < 3 * LOOP_SCALE then
+        return nil
+    end
+    readyBtnCacheAt = now
     local gui = getGui()
     if not gui then return nil end
     for _, d in ipairs(gui:GetDescendants()) do
@@ -2786,14 +3146,17 @@ local function findReadyButton()
             if t ~= "" and (t:find("click to start", 1, true)
                 or t:find("ready", 1, true)
                 or t:find("start", 1, true)) then
+                readyBtnCache = d
                 return d
             end
             local n = tostring(d.Name or ""):lower()
             if n:find("ready", 1, true) or n:find("start", 1, true) then
+                readyBtnCache = d
                 return d
             end
         end
     end
+    readyBtnCache = nil
     return nil
 end
 
@@ -2801,10 +3164,14 @@ local function tryReadyUp(allowClick)
     local fired = false
     local r = Remotes.Ready
     if r and typeof(r) == "Instance" then
-        if type(r.FireServer) == "function" then
+        local okFS, fs = pcall(function() return r.FireServer end)
+        if okFS and type(fs) == "function" then
             if pcall(function() r:FireServer(true) end) then fired = true end
-        elseif type(r.Fire) == "function" then
-            if pcall(function() r:Fire(true) end) then fired = true end
+        else
+            local okF, f = pcall(function() return r.Fire end)
+            if okF and type(f) == "function" then
+                if pcall(function() r:Fire(true) end) then fired = true end
+            end
         end
     end
     if allowClick then
@@ -2814,11 +3181,68 @@ local function tryReadyUp(allowClick)
     return fired
 end
 
+-- === Act 1/2 HARD MODE ===
+-- Act events allow only your own units and require HARD MODE, so find the
+-- on-screen "HARD MODE: OFF" switch and turn it on automatically.
+local hardModeCache, hardModeCacheAt = nil, 0
+
+local function findHardModeButton()
+    if hardModeCache and hardModeCache.Parent and hardModeCache.Visible then
+        return hardModeCache
+    end
+    local now = os.clock()
+    if hardModeCacheAt > 0 and now - hardModeCacheAt < 3 * LOOP_SCALE then
+        return nil
+    end
+    hardModeCacheAt = now
+    local gui = getGui()
+    if not gui then return nil end
+    for _, d in ipairs(gui:GetDescendants()) do
+        if d:IsA("GuiButton") and d.Visible then
+            local t = tostring(safeText(d)):upper()
+            if t:find("HARD MODE", 1, true) then
+                hardModeCache = d
+                return d
+            end
+        end
+    end
+    for _, d in ipairs(gui:GetDescendants()) do
+        if d:IsA("TextLabel") and d.Visible then
+            local t = tostring(safeText(d)):upper()
+            if t:find("HARD MODE", 1, true) and d.Parent and d.Parent:IsA("GuiButton") then
+                hardModeCache = d.Parent
+                return d.Parent
+            end
+        end
+    end
+    hardModeCache = nil
+    return nil
+end
+
+local function hardModeIsOn(btn)
+    if not btn then return false end
+    local t = tostring(safeText(btn)):upper()
+    if t:find("OFF", 1, true) then return false end
+    return t:find("ON", 1, true) ~= nil
+end
+
+local function ensureHardMode()
+    if not isActChapter(State.LobbyChapter) then return false end
+    local btn = findHardModeButton()
+    if not btn then return false end
+    if hardModeIsOn(btn) then return true end
+    pressButtonOnce(btn)
+    task.wait(0.4)
+    local btn2 = findHardModeButton()
+    return hardModeIsOn(btn2)
+end
+
 State.AutomationSession = State.AutomationSession + 1
 local automationSession = State.AutomationSession
 
 task.spawn(function()
     local lastReady, lastSkip = 0, 0
+    local lastHardMode = 0
     local speedReadySince
     local lastRefresh = 0
     local wasReady = false
@@ -2858,7 +3282,15 @@ task.spawn(function()
             Gui.StartEnabledPlayback()
         end
 
-        if State.AutoReady and not ended and now - lastReady >= rand(1.2, 2.2) then
+        -- Act 1 / Act 2: force HARD MODE on
+        if not ended and not State.Playing and isActChapter(State.LobbyChapter) then
+            if now - lastHardMode >= 4 * LOOP_SCALE then
+                lastHardMode = now
+                pcall(ensureHardMode)
+            end
+        end
+
+        if State.AutoReady and not ended and now - lastReady >= rand(1.2, 2.2) * LOOP_SCALE then
             lastReady = now
             if not tryReadyUp(not mr) and not readyWarned then
                 readyWarned = true
@@ -2963,7 +3395,7 @@ task.spawn(function()
             Gui.Runtime:SetDesc(string.format("Wave %d | Money %d | %s | Base %s | Speed x%d",
                 getWave(), getMoney(), getUnitText(), getBaseHp(), State.Speed))
         end
-        humanDelay(0.6, 0.2)
+        humanDelay(0.6 * LOOP_SCALE, 0.2)
     end
 end)
 
