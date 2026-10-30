@@ -103,6 +103,7 @@ local State = {
     AutoSpeed = false,
     AutoAbility = false,
     AutoOpenDoors = false,
+    HumanPause = true,
     DoorCooldown = 12,
     DoorStop = false,
     DoorLimit = 30,
@@ -564,7 +565,7 @@ local function forceReturnToLobby()
             warn("[Hub] Return to lobby: OK")
             return true
         end
-        local btn = gameEnded() and getBackButton() or nil
+        local btn = getBackButton()
         if btn and btn.Parent then
             if not logged then
                 logged = true
@@ -1652,6 +1653,7 @@ local function applyConfig()
     State.AutoSpeed = Config.AutoSpeed == true
     State.AutoAbility = Config.AutoAbility == true
     State.AutoOpenDoors = Config.AutoOpenDoors == true
+    State.HumanPause = Config.HumanPause ~= false
     State.DoorCooldown = math.clamp(tonumber(Config.DoorCooldown) or 12, 1, 30)
     State.SpeedScaleDelay = math.clamp(tonumber(Config.SpeedScaleDelay) or 1, 0.5, 10)
     State.MovingAround = Config.MovingAround == true
@@ -1691,6 +1693,7 @@ saveConfig = function()
         AutoReplay = State.AutoReplay, AutoReady = State.AutoReady,
         AutoSkip = State.AutoSkip, AutoSpeed = State.AutoSpeed, AutoAbility = State.AutoAbility,
         AutoOpenDoors = State.AutoOpenDoors,
+        HumanPause = State.HumanPause,
         DoorCooldown = State.DoorCooldown,
         SpeedScaleDelay = State.SpeedScaleDelay,
         MovingAround = State.MovingAround, AutoJoinMap = State.AutoJoinMap,
@@ -2077,8 +2080,9 @@ safeSection(LobbyTab, { Title = "Match Cycle", Desc = "Persisted across teleport
 local matchCounter = wrapParagraph(safeParagraph(LobbyTab, { Title = "Match Counter", Desc = "..." }))
 local function updateCounter()
     if not matchCounter then return end
+    local done = math.min(tonumber(State.MatchesCompleted) or 0, tonumber(State.MatchesBeforeLobby) or 1)
     matchCounter:SetDesc(string.format("%d/%d | %s",
-        State.MatchesCompleted, State.MatchesBeforeLobby,
+        done, State.MatchesBeforeLobby,
         State.PendingLobbyReturn and "returning" or "running"))
 end
 Gui.UpdateMatchCounter = updateCounter
@@ -2954,6 +2958,10 @@ safeToggle(MiscTab, {
     Title = "Moving Around (AntiKick)", Value = State.MovingAround,
     Callback = function(v) setMoving(v); queueSave() end,
 })
+safeToggle(MiscTab, {
+    Title = "Human Pause (AntiKick)", Value = State.HumanPause,
+    Callback = function(v) State.HumanPause = v == true; queueSave() end,
+})
 
 if State.MovingAround then task.defer(function() setMoving(true) end) end
 
@@ -3357,7 +3365,13 @@ task.spawn(function()
                 restartAfterReplay = not State.PendingLobbyReturn
                     and State.PlaybackEnabled and #State.Actions > 0
                 task.spawn(function()
-                    humanDelay(17.5, 12.5)
+                    local waitS = 17.5
+                    -- an occasional long break between matches looks human
+                    if State.HumanPause and math.random() < 0.3 then
+                        waitS = waitS + math.random(20, 60)
+                        setStatus("Human pause", "taking a short break")
+                    end
+                    humanDelay(waitS, 12.5)
                     if not State.AutoReplay or State.PendingLobbyReturn or State.Playing then return end
                     pcall(function() Remotes.Replay:FireServer() end)
                 end)
