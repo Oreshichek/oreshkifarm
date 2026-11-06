@@ -534,6 +534,7 @@ end
 local saveConfig
 local newProfileName
 local newPlayerName
+local Gui             -- forward declaration, filled in when the UI is built
 
 -- Lobby detection: the end screen alone is not proof, it is hidden on replay too.
 local function lobbyReached(startJob, startPlace)
@@ -562,6 +563,7 @@ local function forceReturnToLobby()
             State.MatchesCompleted = 0
             State.LastCountedJobId = ""
             saveConfig()
+            if Gui and Gui.UpdateMatchCounter then pcall(Gui.UpdateMatchCounter) end
             warn("[Hub] Return to lobby: OK")
             return true
         end
@@ -1130,6 +1132,8 @@ StopRecording = function(save)
     State.Recording = false
     State.RecordSession = State.RecordSession + 1
     disconnectAll(State.RecorderConnections)
+    -- recording can stop by itself (match end) - keep the UI toggle in sync
+    if Gui and Gui.SetRecordToggle then pcall(Gui.SetRecordToggle, false) end
     if save then
         local ok, msg = saveProfile(State.ProfileName)
         if not ok then return false, msg end
@@ -1978,6 +1982,86 @@ local function safeDropdown(t, o) if not t then return nil end; local ok, r = pc
 local function safeSlider(t, o) if not t then return nil end; local ok, r = pcall(function() return t:Slider(o) end); return ok and r or nil end
 local function safeParagraph(t, o) if not t then return nil end; local ok, r = pcall(function() return t:Paragraph(o) end); return ok and r or nil end
 
+-- === Dropdown readability patch ===
+-- WindUI draws the selected value in a fixed 150 px box with TextTruncate =
+-- AtEnd, so long chapter / modifier names are cut off. The popup list is also
+-- narrow and the entries overflow it. Patch every dropdown instance: widen
+-- the control, wrap the selected value, and let each list row wrap + grow.
+local function styleDropdownItem(item)
+    if not item or not item:IsA("GuiObject") then return end
+    pcall(function()
+        item.Size = UDim2.new(1, 0, 0, 0)
+        item.AutomaticSize = Enum.AutomaticSize.Y
+        local inner = item:FindFirstChild("Frame")
+        if inner then
+            inner.AutomaticSize = Enum.AutomaticSize.Y
+            inner.Size = UDim2.new(1, 0, 0, 0)
+        end
+        for _, d in ipairs(item:GetDescendants()) do
+            if d:IsA("TextLabel") then
+                d.TextWrapped = true
+                d.TextTruncate = Enum.TextTruncate.None
+                d.AutomaticSize = Enum.AutomaticSize.Y
+            end
+        end
+    end)
+end
+
+local function patchDropdown(dd, width)
+    if not dd or type(dd) ~= "table" then return dd end
+    width = tonumber(width) or 220
+    pcall(function()
+        local ui = dd.UIElements
+        local btn = ui and ui.Dropdown
+        if btn then
+            btn.Size = UDim2.new(0, width, 0, 36)
+            local holder = btn:FindFirstChild("Frame")
+            holder = holder and holder:FindFirstChild("Frame")
+            local label = holder and holder:FindFirstChild("TextLabel")
+            if label then
+                -- WindUI leaves the label at 0 px height and lets the text
+                -- overflow; give it the full control height so wrapping works.
+                label.Size = UDim2.new(1, label.Size.X.Offset, 1, 0)
+                label.TextTruncate = Enum.TextTruncate.None
+                label.TextWrapped = true
+                label.TextYAlignment = Enum.TextYAlignment.Center
+                if label.TextSize > 14 then label.TextSize = 14 end
+            end
+        end
+
+        -- give the title / description column the room the wider control took
+        local frame = dd.DropdownFrame
+        local container = frame and frame.UIElements and frame.UIElements.Container
+        local titleFrame = container and container:FindFirstChild("TitleFrame")
+        if titleFrame then
+            titleFrame.Size = UDim2.new(1, -width, 0, 0)
+        end
+
+        -- wider popup (WindUI clamps it to 300 with a UISizeConstraint)
+        dd.MenuWidth = math.clamp(width + 40, 180, 260)
+        local canvas = ui and ui.MenuCanvas
+        if canvas then
+            canvas.Size = UDim2.new(0, dd.MenuWidth + 46, canvas.Size.Y.Scale, canvas.Size.Y.Offset)
+        end
+
+        local menu = ui and ui.Menu
+        local scroll = menu and menu.Frame and menu.Frame:FindFirstChild("ScrollingFrame")
+        if not scroll then return end
+        for _, item in ipairs(scroll:GetChildren()) do
+            styleDropdownItem(item)
+        end
+        if not scroll:GetAttribute("__SkibidiDropdownPatched") then
+            scroll:SetAttribute("__SkibidiDropdownPatched", true)
+            -- WindUI rebuilds the list on every Refresh, so style new rows too
+            scroll.ChildAdded:Connect(function(item)
+                task.defer(function() styleDropdownItem(item) end)
+            end)
+        end
+    end)
+    return dd
+end
+
+
 
 local LobbyTab   = safeTab(Window, { Title = "Lobby", Icon = "house" })
 local MacrosTab  = safeTab(Window, { Title = "Macros", Icon = "clapperboard" })
@@ -1987,7 +2071,7 @@ local MiscTab    = safeTab(Window, { Title = "Misc", Icon = "settings" })
 local PlazaTab   = safeTab(Window, { Title = "Plaza", Icon = "map" })
 local WebhookTab = safeTab(Window, { Title = "Webhook", Icon = "webhook" })
 
-local Gui = {}
+Gui = {}
 
 local function setStatus(title, detail)
     if Gui.Status then
@@ -2018,7 +2102,7 @@ safeSection(LobbyTab, { Title = "Lobby Automation", Desc = "Ready and replay" })
 
 local chapterDropdown
 local modeDropdown
-modeDropdown = safeDropdown(LobbyTab, {
+modeDropdown = patchDropdown(safeDropdown(LobbyTab, {
     Title = "Mode",
     Values = {
         "Story", "Multiverse", "Nightmare", "Event", "Versus", "Endless", "All",
@@ -2042,13 +2126,17 @@ modeDropdown = safeDropdown(LobbyTab, {
         State.JoinRequested = false
         queueSave()
     end,
-})
+}), 220)
 
-chapterDropdown = safeDropdown(LobbyTab, {
+chapterDropdown = patchDropdown(safeDropdown(LobbyTab, {
     Title = "Chapter", Values = initChapters, Value = State.LobbyChapter, Multi = false,
     Callback = function(v)
         if type(v) == "string" and v:find("(Coming Soon)", 1, true) then
             notify("Coming Soon", v .. " - not released yet.")
+            -- WindUI already changed the visible selection - put it back
+            if chapterDropdown then
+                pcall(function() chapterDropdown:Select(State.LobbyChapter) end)
+            end
             return
         end
         State.LobbyChapter = v
@@ -2058,7 +2146,7 @@ chapterDropdown = safeDropdown(LobbyTab, {
             notify("Act event", "HARD MODE only - the hub forces it and uses your own units.")
         end
     end,
-})
+}), 270)
 safeParagraph(LobbyTab, {
     Title = "Act 1 / Act 2 = HARD MODE",
     Desc = "Event acts allow only your own units and require HARD MODE. When an Act is selected the hub automatically turns HARD MODE on.",
@@ -2069,12 +2157,12 @@ safeToggle(LobbyTab, {
     Callback = function(v) State.AutoJoinMap = v == true; State.JoinRequested = false; queueSave() end,
 })
 
-safeDropdown(LobbyTab, {
+patchDropdown(safeDropdown(LobbyTab, {
     Title = "Modifiers", Values = ModList,
     Value = modsForDropdown(State.LobbyModifiers),
     Multi = true, AllowNone = true, SearchBarEnabled = true,
     Callback = function(v) State.LobbyModifiers = normalizeMods(v); State.JoinRequested = false; queueSave() end,
-})
+}), 240)
 
 safeSection(LobbyTab, { Title = "Match Cycle", Desc = "Persisted across teleports" })
 local matchCounter = wrapParagraph(safeParagraph(LobbyTab, { Title = "Match Counter", Desc = "..." }))
@@ -2541,7 +2629,7 @@ safeButton(MacrosTab, {
     end,
 })
 
-profileDropdown = safeDropdown(MacrosTab, {
+profileDropdown = patchDropdown(safeDropdown(MacrosTab, {
     Title = "Select Macro", Values = profileValues, Value = selectedDefault, Multi = false,
     Callback = function(v)
         if v == "(none)" then return end
@@ -2554,7 +2642,7 @@ profileDropdown = safeDropdown(MacrosTab, {
             setStatus("Load failed", tostring(msg))
         end
     end,
-})
+}), 230)
 
 safeSection(IOTab, { Title = "Import / Export", Desc = "Copy a macro as JSON, paste it back" })
 safeParagraph(IOTab, {
@@ -2617,6 +2705,7 @@ safeButton(IOTab, {
         if ok and dec and type(dec.Actions) == "table" then
             State.PlayerActions = dec.Actions
             State.PlayerRecordingProfileName = sanitize(dec.Name or "ImportedPlayer")
+            if Gui.RefreshPlayerList then Gui.RefreshPlayerList() end
             notify("Import", "OK")
         else
             notify("Import failed", "Invalid")
@@ -2624,11 +2713,11 @@ safeButton(IOTab, {
     end,
 })
 
-safeDropdown(MacrosTab, {
+patchDropdown(safeDropdown(MacrosTab, {
     Title = "Playback Mode", Values = { "Hybrid", "Time", "Money" },
     Value = State.PlaybackMode, Multi = false,
     Callback = function(v) State.PlaybackMode = v; queueSave() end,
-})
+}), 190)
 
 local changingToggle = false
 local recordToggle, playbackToggle
@@ -2661,7 +2750,9 @@ recordToggle = safeToggle(MacrosTab, {
             end
         elseif State.Recording then
             local ok, msg = StopRecording(true)
-            if ok then refreshProfiles(State.ProfileName)
+            if ok then
+                refreshActionList()
+                refreshProfiles(State.ProfileName)
             else notify("Cannot save", tostring(msg)) end
         end
     end,
@@ -2715,11 +2806,12 @@ local function refreshPlayerList()
     playerSummary:SetTitle(string.format("Recorded: %d", #State.PlayerActions))
     playerSummary:SetDesc(#lines > 0 and table.concat(lines, "\n") or "None")
 end
+Gui.RefreshPlayerList = refreshPlayerList
 
 newPlayerName = Config.NewPlayerName or ""
 safeInput(PlayerTab, {
     Title = "Create Player Macro", Placeholder = "example: my_player_run", Value = newPlayerName,
-    Callback = function(v) newPlayerName = sanitize(v) end,
+    Callback = function(v) newPlayerName = sanitize(v); queueSave() end,
 })
 
 local playerProfileValues = listPlayerProfiles()
@@ -2752,7 +2844,7 @@ safeButton(PlayerTab, {
     end,
 })
 
-playerDropdown = safeDropdown(PlayerTab, {
+playerDropdown = patchDropdown(safeDropdown(PlayerTab, {
     Title = "Select Player Macro", Values = playerProfileValues,
     Value = playerProfileValues[1], Multi = false,
     Callback = function(v)
@@ -2767,7 +2859,7 @@ playerDropdown = safeDropdown(PlayerTab, {
             end
         end
     end,
-})
+}), 230)
 
 local changingPlayerToggle = false
 local playerRecToggle
@@ -2903,7 +2995,10 @@ playerPlayToggle = safeToggle(PlayerTab, {
                         humanDelay(0.15, 0.05)
                     end
                 end
-                if sess == State.PlayerPlaybackSession then State.Playing = false end
+                if sess == State.PlayerPlaybackSession then
+                    State.Playing = false
+                    setPlayerToggle(playerPlayToggle, false)
+                end
             end)
         elseif State.Playing then
             stopPlayback("Stopped by user")
@@ -2932,7 +3027,7 @@ safeToggle(MiscTab, {
     Title = "Auto Speed Scale", Value = State.AutoSpeed,
     Callback = function(v) State.AutoSpeed = v == true; queueSave() end,
 })
-safeDropdown(MiscTab, {
+patchDropdown(safeDropdown(MiscTab, {
     Title = "Speed Scale", Values = { "x1", "x2", "x3", "x4", "x5", "x6" },
     Value = "x" .. tostring(State.Speed), Multi = false,
     Callback = function(v)
@@ -2940,7 +3035,7 @@ safeDropdown(MiscTab, {
         State.Speed = math.clamp(s, 1, 6)
         queueSave()
     end,
-})
+}), 170)
 safeSlider(MiscTab, {
     Title = "Speed Scale Delay", Desc = "Seconds", Step = 0.5,
     Value = { Min = 0.5, Max = 10, Default = State.SpeedScaleDelay },
